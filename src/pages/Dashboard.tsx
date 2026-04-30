@@ -44,12 +44,14 @@ const Dashboard: React.FC = () => {
   const {
     kpis,
     evolution,
-    loading,
+    kpiLoading,
+    chartLoading,
     error,
+    errorBySection,
   } = useAnalytics(filters);
 
   const dashboardRef = useGsapReveal<HTMLDivElement>(
-    [loading, error, lastPigeAnnonce.length, monitoredAnnonces.length],
+    [kpiLoading, chartLoading, error, lastPigeAnnonce.length, monitoredAnnonces.length],
     {
       selector: '[data-gsap-reveal]',
       y: 18,
@@ -236,19 +238,6 @@ const Dashboard: React.FC = () => {
     },
   ];
 
-  if (loading) {
-    return (
-      <div className="animate-pulse">
-        <div className="h-8 bg-gray-200 rounded w-64 mb-6"></div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="bg-gray-200 h-32 rounded-lg"></div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div ref={dashboardRef} className="space-y-7">
       <section
@@ -323,11 +312,11 @@ const Dashboard: React.FC = () => {
             <div className="mt-6 grid grid-cols-2 gap-3">
               <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
                 <p className="text-xs text-white/60">Particuliers</p>
-                <p className="mt-1 text-2xl font-bold text-white">{kpis.totalAnnonces}</p>
+                <p className="mt-1 text-2xl font-bold text-white">{kpiLoading ? '...' : kpis.totalAnnonces}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
                 <p className="text-xs text-white/60">Pros</p>
-                <p className="mt-1 text-2xl font-bold text-white">{kpis.totalAnnoncesPro}</p>
+                <p className="mt-1 text-2xl font-bold text-white">{kpiLoading ? '...' : kpis.totalAnnoncesPro}</p>
               </div>
             </div>
           </div>
@@ -338,6 +327,11 @@ const Dashboard: React.FC = () => {
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4" data-gsap-reveal>
           <p className="text-red-700">Erreur : {error}</p>
+        </div>
+      )}
+      {Object.entries(errorBySection).length > 1 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800" data-gsap-reveal>
+          Certaines données secondaires n'ont pas répondu assez vite. Le dashboard reste utilisable.
         </div>
       )}
 
@@ -351,7 +345,7 @@ const Dashboard: React.FC = () => {
             <span className="flex flex-col justify-between">
               <span>
                 <span className="text-sm font-semibold opacity-80">{label}</span>
-                <span className="mt-2 block text-4xl font-bold">{value}</span>
+                <span className="mt-2 block text-4xl font-bold">{kpiLoading ? '...' : value}</span>
               </span>
               <span className="text-sm opacity-70">{helper}</span>
             </span>
@@ -391,18 +385,18 @@ const Dashboard: React.FC = () => {
 
       {/* KPIs - 4 cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatsCard title="Total annonces PRO" value={kpis.totalAnnoncesPro} icon={Home} color="warning" />
-        <StatsCard title="Total annonces Particulier" value={kpis.totalAnnonces} icon={Users} color="primary" />
+        <StatsCard title="Total annonces PRO" value={kpiLoading ? '...' : kpis.totalAnnoncesPro} icon={Home} color="warning" />
+        <StatsCard title="Total annonces Particulier" value={kpiLoading ? '...' : kpis.totalAnnonces} icon={Users} color="primary" />
         <StatsCard
           title="Rappels à venir"
-          value={kpis.rappelsAFaire}
+          value={kpiLoading ? '...' : kpis.rappelsAFaire}
           icon={Calendar}
           trend={{ value: kpis.rappelsAFaireVariation, isPositive: kpis.rappelsAFaireVariation >= 0 }}
           color="secondary"
         />
         <StatsCard
           title="À traiter"
-          value={kpis.toProcessReminders}
+          value={kpiLoading ? '...' : kpis.toProcessReminders}
           icon={Clock}
           trend={{ value: kpis.toProcessRemindersVariation, isPositive: kpis.toProcessRemindersVariation >= 0 }}
           color="success"
@@ -413,13 +407,13 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         <div className="surface-panel rounded-2xl p-6 lg:col-span-3" data-gsap-reveal>
           <h2 className="text-lg font-semibold text-secondary-900 mb-4">Activité des annonces & appels</h2>
-          <EvolutionChart data={evolution} loading={loading} />
+          <EvolutionChart data={evolution} loading={chartLoading} />
         </div>
 
         <div className="flex flex-col space-y-6 lg:col-span-1">
           <StatsCard
             title="Nouvelles annonces PRO aujourd'hui"
-            value={kpis.newPropertiesProToday}
+            value={kpiLoading ? '...' : kpis.newPropertiesProToday}
             icon={TrendingUp}
             trend={{ value: kpis.newPropertiesProTodayVariation, isPositive: kpis.newPropertiesProTodayVariation >= 0 }}
             comparisonPeriod="vs. hier"
@@ -427,7 +421,7 @@ const Dashboard: React.FC = () => {
           />
           <StatsCard
             title="Nouvelles annonces Particulier aujourd'hui"
-            value={kpis.newPropertiesParticulierToday}
+            value={kpiLoading ? '...' : kpis.newPropertiesParticulierToday}
             icon={Users}
             trend={{ value: kpis.newPropertiesParticulierTodayVariation, isPositive: kpis.newPropertiesParticulierTodayVariation >= 0 }}
             comparisonPeriod="vs. hier"
