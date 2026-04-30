@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Define CSS variables for primary colors */
+:root {
+  --color-primary-50: #fff7ed;
+  --color-primary-100: #ffeed5;
+  --color-primary-200: #fed7aa;
+  --color-primary-300: #fdba74;
+  --color-primary-400: #fb923c;
+  --color-primary-500: #FFB23F; /* Default: Orange */
+  --color-primary-600: #ea580c;
+  --color-primary-700: #c2410c;
+  --color-primary-800: #9a3412;
+  --color-primary-900: #7c2d12;
+}
+
+/* Theme-specific primary colors */
+.theme-blue { --color-primary-500: #3b82f6; }
+.theme-green { --color-primary-500: #10B981; } /* Example green, adjust as needed */
+.theme-purple { --color-primary-500: #8b5cf6; }
+.theme-orange { --color-primary-500: #FFB23F; }
+
+/* ----- Base styles ----- */
+html, body {
+  @apply text-secondary-900 dark:bg-secondary-900 dark:text-white;
+  background:
+    radial-gradient(circle at top left, rgba(255, 178, 63, 0.14), transparent 28rem),
+    linear-gradient(135deg, #fffaf3 0%, #f8fafc 44%, #eef2f7 100%);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100vh;
+}
+
+/* Liens */
+a:not(.nav-link) {
+  @apply text-primary-500 hover:text-primary-600 transition-colors;
+}
+
+.nav-link {
+  color: inherit;
+}
+
+.nav-link:hover {
+  color: inherit;
+}
+
+.nav-link-active,
+.nav-link-active:hover {
+  color: #111827;
+}
+
+.nav-link-idle {
+  color: #d1d5db;
+}
+
+.nav-link-idle:hover {
+  color: #ffffff;
+}
+
+/* Titres */
+h1, h2, h3, h4, h5, h6 {
+  @apply font-bold text-secondary-900 dark:text-white;
+}
+
+/* Boutons de base */
+.btn {
+  /* Use CSS variables for dynamic primary color */
+  @apply inline-flex items-center justify-center px-4 py-2 rounded-lg font-medium transition-all duration-200 bg-[var(--color-primary-500)] text-white hover:bg-[var(--color-primary-600)] shadow-sm hover:shadow-md;
+}
+
+.btn-primary {
+  @apply bg-primary-500 text-white hover:bg-primary-600;
+}
+
+.btn-secondary {
+  @apply bg-secondary-500 text-white hover:bg-secondary-600;
+}
+
+.btn-outline {
+  @apply border border-secondary-300 text-secondary-900 hover:bg-secondary-100;
+}
+
+/* Inputs & Select */
+input, select, textarea {
+  @apply border border-secondary-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary-500 dark:bg-secondary-800 dark:border-secondary-600 dark:text-white;
+}
+
+/* Cartes */
+.card {
+  @apply bg-white/90 dark:bg-secondary-800 rounded-xl shadow-sm border border-white/70 p-4;
+}
+
+.app-shell {
+  background:
+    radial-gradient(circle at 78% 0%, rgba(255, 178, 63, 0.18), transparent 26rem),
+    radial-gradient(circle at 12% 12%, rgba(15, 23, 42, 0.08), transparent 24rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(241, 245, 249, 0.96));
+}
+
+.glass-panel {
+  @apply bg-white/85 backdrop-blur-xl border border-white/70 shadow-sm;
+}
+
+.surface-panel {
+  @apply bg-white/95 border border-gray-200/80 shadow-sm;
+}
+
+.motion-safe-card {
+  @apply transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg;
+}
+
+/* Animations personnalisées (depuis tailwind.config.js) */
+.fade-in {
+  @apply animate-fade-in;
+}
+
+.slide-up {
+  @apply animate-slide-up;
+}
+
+.scale-in {
+  @apply animate-scale-in;
+}
+
+/* Scrollbar personnalisée */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-secondary-100 dark:bg-secondary-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-secondary-400 dark:bg-secondary-600 rounded-full;
+}
