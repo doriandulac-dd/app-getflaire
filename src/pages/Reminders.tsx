@@ -162,30 +162,30 @@ const Reminders: React.FC = () => {
     <div ref={pageRef} className="space-y-6">
       <section
         data-reminders-intro
-        className="relative overflow-hidden rounded-[2rem] border border-white/70 bg-secondary-950 p-6 text-white shadow-2xl shadow-secondary-900/15 lg:p-8"
+        className="relative overflow-hidden rounded-[2rem] border border-primary-100 bg-gradient-to-br from-white via-orange-50 to-blue-50 p-6 text-secondary-950 shadow-2xl shadow-secondary-900/10 ring-1 ring-white/80 lg:p-8"
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,183,77,0.30),transparent_34%),radial-gradient(circle_at_80%_10%,rgba(95,130,255,0.20),transparent_32%)]" />
-        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-white/10 bg-white/5 blur-sm" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,183,77,0.22),transparent_34%),radial-gradient(circle_at_80%_10%,rgba(29,78,216,0.14),transparent_32%)]" />
+        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-blue-200/50 bg-white/45 blur-sm" />
         <div className="relative z-10 grid gap-6 lg:grid-cols-[1fr_340px] lg:items-end">
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-primary-100">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/85 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-primary-700 shadow-sm">
               <Sparkles className="h-3.5 w-3.5" />
               Pipeline de suivi
             </div>
             <h1 className="max-w-4xl text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
               Rappels commerciaux, priorisés pour votre prochaine action.
             </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-6 text-secondary-200 sm:text-base">
+            <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-secondary-600 sm:text-base">
               Suivez les relances, RDV et annonces à traiter dans une timeline claire, avec les retards et actions du jour visibles immédiatement.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-secondary-300">Prochaine action</p>
+          <div className="rounded-3xl border border-white bg-white/85 p-4 shadow-xl shadow-secondary-900/10 backdrop-blur">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-secondary-500">Prochaine action</p>
             {nextReminder ? (
               <>
-                <p className="mt-2 line-clamp-2 text-lg font-black text-white">{nextReminder.annonce_title}</p>
-                <p className="mt-2 text-sm font-medium text-secondary-200">
+                <p className="mt-2 line-clamp-2 text-lg font-black text-secondary-950">{nextReminder.annonce_title}</p>
+                <p className="mt-2 text-sm font-semibold text-secondary-600">
                   {reminderTypeLabels[nextReminder.type]} · {new Intl.DateTimeFormat('fr-FR', {
                     day: 'numeric',
                     month: 'short',
@@ -195,7 +195,7 @@ const Reminders: React.FC = () => {
                 </p>
               </>
             ) : (
-              <p className="mt-2 text-sm font-semibold text-secondary-200">Aucune action ouverte pour le moment.</p>
+              <p className="mt-2 text-sm font-semibold text-secondary-600">Aucune action ouverte pour le moment.</p>
             )}
           </div>
         </div>
