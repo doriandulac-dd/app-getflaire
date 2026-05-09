@@ -96,7 +96,7 @@ const CityAutocomplete: React.FC<CityAutocompleteProps> = ({
     }
   };
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+  const handleBlur = () => {
     // Delay hiding suggestions to allow clicking on them
     setTimeout(() => {
       if (!suggestionsRef.current?.contains(document.activeElement)) {
@@ -108,7 +108,7 @@ const CityAutocomplete: React.FC<CityAutocompleteProps> = ({
   return (
     <div className="relative">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-400" />
         <input
           ref={inputRef}
           type="text"
@@ -118,12 +118,13 @@ const CityAutocomplete: React.FC<CityAutocompleteProps> = ({
           onFocus={() => inputValue.length >= 2 && setShowSuggestions(true)}
           onBlur={handleBlur}
           placeholder={placeholder}
-          className="w-full pl-10 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500"
+          className="w-full rounded-2xl border border-secondary-200 bg-white/90 py-3 pl-11 pr-10 text-sm font-semibold text-secondary-900 outline-none transition placeholder:text-secondary-400 focus:border-primary-300 focus:ring-4 focus:ring-primary-100"
         />
         {inputValue && (
           <button
+            type="button"
             onClick={handleClear}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-secondary-400 hover:text-secondary-700"
           >
             <X className="h-4 w-4" />
           </button>
@@ -134,10 +135,10 @@ const CityAutocomplete: React.FC<CityAutocompleteProps> = ({
       {showSuggestions && (suggestions.length > 0 || loading) && (
         <div
           ref={suggestionsRef}
-          className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto mt-1"
+          className="absolute left-0 right-0 top-full z-20 mt-2 max-h-60 overflow-y-auto rounded-2xl border border-secondary-100 bg-white p-1 shadow-xl"
         >
           {loading ? (
-            <div className="px-4 py-3 text-sm text-gray-500">
+            <div className="px-4 py-3 text-sm font-semibold text-secondary-500">
               Recherche en cours...
             </div>
           ) : (
@@ -146,7 +147,7 @@ const CityAutocomplete: React.FC<CityAutocompleteProps> = ({
                 key={index}
                 type="button"
                 onClick={() => handleSuggestionClick(city)}
-                className="w-full text-left px-4 py-3 text-sm hover:bg-primary-50 hover:text-primary-700 focus:bg-primary-50 focus:text-primary-700 focus:outline-none first:rounded-t-lg last:rounded-b-lg"
+                className="w-full rounded-xl px-4 py-3 text-left text-sm font-semibold text-secondary-700 transition hover:bg-primary-50 hover:text-primary-700 focus:bg-primary-50 focus:text-primary-700 focus:outline-none"
               >
                 {city}
               </button>

@@ -31,12 +31,13 @@ import LoadingSkeleton from '../components/UI/LoadingSkeleton';
 import { useGsapReveal } from '../hooks/useGsapReveal';
 import {
   defaultSmartAlertCriteria,
+  defaultScoreWeights,
   getSmartAlertBadge,
   parseNaturalLanguageCriteria,
   thresholdForMode,
   useSmartAlerts,
 } from '../hooks/useSmartAlerts';
-import { AlertMatchResult, SmartAlertFormData, WeightedKeyword } from '../types/smartAlerts';
+import { AlertMatchResult, ScoreWeights, SmartAlertFormData, WeightedKeyword } from '../types/smartAlerts';
 
 type SmartAlertTab = 'new' | 'results' | 'saved' | 'history';
 
@@ -99,6 +100,17 @@ const keywordString = (keywords: WeightedKeyword[]) =>
 const keywordList = (value: string, importance: WeightedKeyword['importance'] = 'medium'): WeightedKeyword[] =>
   parseList(value).map(item => ({ value: item, importance }));
 
+const scoreWeightItems: Array<{ key: keyof ScoreWeights; label: string; helper: string }> = [
+  { key: 'localisation', label: 'Localisation', helper: 'Ville, communes, rayon' },
+  { key: 'budget', label: 'Budget', helper: 'Prix min/max et tolerance' },
+  { key: 'type', label: 'Type', helper: 'Maison, appartement, secondaire' },
+  { key: 'surface', label: 'Surface / pieces', helper: 'm², pieces, chambres' },
+  { key: 'exterieur', label: 'Exterieur', helper: 'Jardin, terrasse, balcon' },
+  { key: 'etat', label: 'Etat / travaux', helper: 'Travaux exclus ou acceptes' },
+  { key: 'dpe', label: 'DPE', helper: 'Classes energetiques' },
+  { key: 'motsCles', label: 'Mots-cles', helper: 'Termes recherches/exclus' },
+];
+
 const SmartAlerts: React.FC = () => {
   const {
     clients,
@@ -125,6 +137,8 @@ const SmartAlerts: React.FC = () => {
   const [clientForm, setClientForm] = useState({ first_name: '', last_name: '', email: '', phone: '', notes: '' });
   const [showClientForm, setShowClientForm] = useState(false);
   const [resultFilter, setResultFilter] = useState({ minScore: 0, city: '', status: 'all' });
+  const scoreWeights = form.options_avancees.scoreWeights || defaultScoreWeights;
+  const scoreWeightTotal = Object.values(scoreWeights).reduce((sum, value) => sum + value, 0);
 
   const pageRef = useGsapReveal<HTMLDivElement>(
     [activeTab, results.length, alerts.length],
@@ -161,6 +175,17 @@ const SmartAlerts: React.FC = () => {
     }));
   };
 
+  const updateScoreWeight = (key: keyof ScoreWeights, value: number) => {
+    updateCriteria('scoreWeights', {
+      ...scoreWeights,
+      [key]: Math.max(0, Math.min(100, value)),
+    });
+  };
+
+  const resetScoreWeights = () => {
+    updateCriteria('scoreWeights', defaultScoreWeights);
+  };
+
   const handleCreateClient = async () => {
     if (!clientForm.first_name.trim() || !clientForm.last_name.trim()) {
       toast.error('Prénom et nom client obligatoires');
@@ -185,6 +210,7 @@ const SmartAlerts: React.FC = () => {
       options_avancees: {
         ...prev.options_avancees,
         ...(parsed.options_avancees || {}),
+        scoreWeights: prev.options_avancees.scoreWeights,
       },
     }));
     toast.success('Critères générés');
@@ -581,23 +607,69 @@ const SmartAlerts: React.FC = () => {
                   <p><strong className="text-white">Seuil:</strong> {form.matching_threshold}% · {form.frequence_analyse}</p>
                 </div>
               </div>
-              <div className="rounded-2xl border border-gray-200 bg-white p-5">
-                <h3 className="mb-3 flex items-center text-sm font-bold text-secondary-900"><SlidersHorizontal className="mr-2 h-4 w-4" /> Pondération V1</h3>
-                {[
-                  ['Localisation', 25],
-                  ['Budget', 20],
-                  ['Type', 15],
-                  ['Surface / pièces', 15],
-                  ['Extérieur', 10],
-                  ['État / travaux', 5],
-                  ['DPE', 5],
-                  ['Mots-clés', 5],
-                ].map(([label, value]) => (
-                  <div key={label} className="mb-2 flex items-center justify-between text-sm">
-                    <span className="text-secondary-600">{label}</span>
-                    <span className="font-bold text-secondary-900">{value} pts</span>
+              <div className="rounded-2xl border border-gray-200 bg-white p-3">
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="flex items-center text-sm font-bold text-secondary-900">
+                      <SlidersHorizontal className="mr-2 h-4 w-4" />
+                      Pondération personnalisée
+                    </h3>
+                    <p className="mt-0.5 text-[11px] leading-4 text-secondary-500">
+                      Ajuste les points selon les priorités du client.
+                    </p>
                   </div>
-                ))}
+                  <button
+                    type="button"
+                    onClick={resetScoreWeights}
+                    className="rounded-lg border border-gray-200 px-2.5 py-1 text-[11px] font-bold text-secondary-600 hover:bg-gray-50"
+                  >
+                    Reset
+                  </button>
+                </div>
+
+                <div className={`mb-2 rounded-lg px-2.5 py-1.5 text-xs font-bold ${
+                  scoreWeightTotal === 100
+                    ? 'bg-emerald-50 text-emerald-700'
+                    : 'bg-amber-50 text-amber-800'
+                }`}>
+                  Total: {scoreWeightTotal} pts
+                  {scoreWeightTotal !== 100 && (
+                    <span className="ml-1 font-semibold">Score normalisé.</span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {scoreWeightItems.map(item => (
+                    <div key={item.key} className="rounded-lg border border-gray-100 bg-gray-50 px-2.5 py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-bold text-secondary-900">{item.label}</p>
+                          <p className="truncate text-[11px] text-secondary-500">{item.helper}</p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <input
+                            className="h-8 w-12 rounded-lg border border-gray-200 bg-white px-1.5 text-right text-xs font-bold text-secondary-900 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={scoreWeights[item.key]}
+                            onChange={event => updateScoreWeight(item.key, toNumber(event.target.value) || 0)}
+                          />
+                          <span className="text-[11px] font-bold text-secondary-500">pts</span>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min={0}
+                        max={40}
+                        value={scoreWeights[item.key]}
+                        onChange={event => updateScoreWeight(item.key, toNumber(event.target.value) || 0)}
+                        className="mt-1 h-1.5 w-full accent-primary-600"
+                        aria-label={`Poids ${item.label}`}
+                      />
+                    </div>
+                  ))}
+                </div>
               </div>
             </aside>
           </div>

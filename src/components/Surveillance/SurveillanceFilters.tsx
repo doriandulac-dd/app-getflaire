@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { useEffect } from 'react';
-import { Filter, X, Search } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Building2, Filter, MapPin, Search, SlidersHorizontal, Tag, X } from 'lucide-react';
 import { SurveillanceFilters } from '../../types/surveillance';
 import { supabase } from '../../lib/supabase';
 
@@ -10,31 +9,33 @@ interface SurveillanceFiltersProps {
   onClearFilters: () => void;
 }
 
+type SurveillanceFilterValue = SurveillanceFilters[keyof SurveillanceFilters];
+
+const propertyTypes = [
+  { value: 'Appartement', label: 'Appartement' },
+  { value: 'Maison', label: 'Maison' },
+  { value: 'Terrain', label: 'Terrain' },
+  { value: 'Commercial', label: 'Commercial' },
+  { value: 'Autre', label: 'Autre' },
+];
+
+const statusOptions = [
+  { value: 'en_ligne', label: 'En ligne' },
+  { value: 'hors_ligne', label: 'Hors ligne' },
+  { value: 'supprimee', label: 'Supprimée' },
+];
+
 const SurveillanceFiltersComponent: React.FC<SurveillanceFiltersProps> = ({
   filters,
   onFiltersChange,
   onClearFilters,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [cityInput, setCityInput] = useState('');
   const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const propertyTypes = [
-    { value: 'Appartement', label: 'Appartement' },
-    { value: 'Maison', label: 'Maison' },
-    { value: 'Terrain', label: 'Terrain' },
-    { value: 'Commercial', label: 'Commercial' },
-    { value: 'Autre', label: 'Autre' },
-  ];
-
-  const statusOptions = [
-    { value: 'en_ligne', label: 'En ligne' },
-    { value: 'hors_ligne', label: 'Hors ligne' },
-    { value: 'supprimee', label: 'Supprimée' },
-  ];
-
-  // Fetch city suggestions based on input
   useEffect(() => {
     const fetchCitySuggestions = async () => {
       if (cityInput.length < 2) {
@@ -52,9 +53,8 @@ const SurveillanceFiltersComponent: React.FC<SurveillanceFiltersProps> = ({
 
         if (error) throw error;
 
-        // Get unique cities and filter out already selected ones
-        const uniqueCities = [...new Set(data?.map(item => item.city) || [])]
-          .filter(city => city && !((filters.cities || []).includes(city)))
+        const uniqueCities = [...new Set(data?.map((item) => item.city) || [])]
+          .filter((city) => city && !((filters.cities || []).includes(city)))
           .sort();
 
         setCitySuggestions(uniqueCities);
@@ -68,7 +68,15 @@ const SurveillanceFiltersComponent: React.FC<SurveillanceFiltersProps> = ({
     return () => clearTimeout(debounceTimer);
   }, [cityInput, filters.cities]);
 
-  const handleFilterChange = (key: keyof SurveillanceFilters, value: any) => {
+  const activeFiltersCount = useMemo(
+    () =>
+      Object.values(filters).filter((value) =>
+        value !== undefined && value !== '' && (Array.isArray(value) ? value.length > 0 : true)
+      ).length,
+    [filters]
+  );
+
+  const handleFilterChange = (key: keyof SurveillanceFilters, value: SurveillanceFilterValue) => {
     onFiltersChange({
       ...filters,
       [key]: value,
@@ -77,10 +85,7 @@ const SurveillanceFiltersComponent: React.FC<SurveillanceFiltersProps> = ({
 
   const handleArrayFilterChange = (key: keyof SurveillanceFilters, value: string, checked: boolean) => {
     const currentValues = (filters[key] as string[]) || [];
-    const newValues = checked
-      ? [...currentValues, value]
-      : currentValues.filter(v => v !== value);
-    
+    const newValues = checked ? [...currentValues, value] : currentValues.filter((item) => item !== value);
     handleFilterChange(key, newValues.length > 0 ? newValues : undefined);
   };
 
@@ -92,227 +97,218 @@ const SurveillanceFiltersComponent: React.FC<SurveillanceFiltersProps> = ({
     }
   };
 
-  const handleCityInputChange = (value: string) => {
-    setCityInput(value);
-    setShowSuggestions(value.length >= 2);
-  };
-
-  const handleCityInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
+  const handleCityInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
       if (citySuggestions.length > 0) {
         handleCityAdd(citySuggestions[0]);
       } else if (cityInput.trim()) {
         handleCityAdd(cityInput.trim());
       }
-    } else if (e.key === 'Escape') {
+    } else if (event.key === 'Escape') {
       setShowSuggestions(false);
       setCityInput('');
     }
   };
 
-  const activeFiltersCount = Object.values(filters).filter(value => 
-    value !== undefined && value !== '' && 
-    (Array.isArray(value) ? value.length > 0 : true)
-  ).length;
-
   return (
-    <div className="bg-gray-50 rounded-lg p-4">
-      {/* Mobile toggle */}
-      <div className="flex items-center justify-between lg:hidden">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center space-x-2 text-secondary-700 font-medium"
-        >
-          <Filter className="h-5 w-5" />
-          <span>Filtres</span>
-          {activeFiltersCount > 0 && (
-            <span className="bg-primary-500 text-white rounded-full px-2 py-1 text-xs">
-              {activeFiltersCount}
-            </span>
-          )}
-        </button>
-        
-        {activeFiltersCount > 0 && (
-          <button
-            onClick={onClearFilters}
-            className="text-sm text-secondary-500 hover:text-secondary-700"
-          >
-            Effacer
-          </button>
-        )}
-      </div>
-
-      {/* Filters content */}
-      <div className={`space-y-4 ${isOpen ? 'block' : 'hidden lg:block'} ${isOpen ? 'mt-4' : ''}`}>
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Rechercher par titre, ville..."
-            value={filters.search || ''}
-            onChange={(e) => handleFilterChange('search', e.target.value || undefined)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-          />
+    <section className="rounded-3xl border border-secondary-100 bg-white p-4 shadow-sm lg:p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-secondary-950 p-3 text-white">
+            <SlidersHorizontal className="h-4 w-4" />
+          </div>
+          <div>
+            <h3 className="text-sm font-black text-secondary-950">Filtres de surveillance</h3>
+            <p className="text-xs font-medium text-secondary-500">
+              {activeFiltersCount > 0
+                ? `${activeFiltersCount} filtre${activeFiltersCount > 1 ? 's' : ''} actif${activeFiltersCount > 1 ? 's' : ''}`
+                : 'Affinez les annonces suivies ou le stock'}
+            </p>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-          {/* Property types */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Type de bien
-            </label>
-            <div className="space-y-2">
-              {propertyTypes.map(type => (
-                <label key={type.value} className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={(filters.property_types || []).includes(type.value)}
-                    onChange={(e) => handleArrayFilterChange('property_types', type.value, e.target.checked)}
-                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-secondary-700">{type.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsOpen((value) => !value)}
+            className="inline-flex items-center rounded-2xl border border-secondary-200 bg-white px-3 py-2 text-sm font-bold text-secondary-700 shadow-sm transition hover:border-primary-200 hover:text-primary-700 lg:hidden"
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            {isOpen ? 'Masquer' : 'Afficher'}
+          </button>
+          {activeFiltersCount > 0 && (
+            <button
+              type="button"
+              onClick={onClearFilters}
+              className="inline-flex items-center rounded-2xl bg-secondary-100 px-3 py-2 text-sm font-bold text-secondary-700 transition hover:bg-secondary-200"
+            >
+              <X className="mr-2 h-4 w-4" />
+              Réinitialiser
+            </button>
+          )}
+        </div>
+      </div>
 
-          {/* Cities */}
-          <div className="min-w-0">
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
+      <div className={`${isOpen ? 'block' : 'hidden lg:block'} mt-5 space-y-5`}>
+        <div className="grid gap-3 lg:grid-cols-[1.3fr_1fr_1fr]">
+          <label className="relative block">
+            <span className="mb-2 flex items-center text-xs font-black uppercase tracking-[0.14em] text-secondary-500">
+              <Search className="mr-1.5 h-3.5 w-3.5" />
+              Recherche
+            </span>
+            <input
+              type="text"
+              placeholder="Titre, description, ville..."
+              value={filters.search || ''}
+              onChange={(event) => handleFilterChange('search', event.target.value || undefined)}
+              className="w-full rounded-2xl border border-secondary-200 bg-secondary-50/80 px-4 py-3 text-sm font-medium text-secondary-900 outline-none transition placeholder:text-secondary-400 focus:border-primary-300 focus:bg-white focus:ring-4 focus:ring-primary-100"
+            />
+          </label>
+
+          <label className="relative block">
+            <span className="mb-2 flex items-center text-xs font-black uppercase tracking-[0.14em] text-secondary-500">
+              <MapPin className="mr-1.5 h-3.5 w-3.5" />
               Villes
-            </label>
-            <div className="space-y-2 relative">
-              <input
-                type="text"
-                placeholder="Ajouter une ville..."
-                value={cityInput}
-                onChange={(e) => handleCityInputChange(e.target.value)}
-                onKeyDown={handleCityInputKeyDown}
-                onFocus={() => cityInput.length >= 2 && setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-              
-              {/* Suggestions dropdown */}
-              {showSuggestions && citySuggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
-                  {citySuggestions.map((city, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => handleCityAdd(city)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50 hover:text-primary-700 focus:bg-primary-50 focus:text-primary-700 focus:outline-none"
-                    >
-                      {city}
-                    </button>
-                  ))}
-                </div>
-              )}
-              
-              <div className="max-h-32 overflow-y-auto space-y-1">
-                {(filters.cities || []).map(city => (
-                  <div key={city} className="flex items-center justify-between bg-primary-50 px-2 py-1 rounded text-sm">
-                    <span className="text-primary-700">{city}</span>
-                    <button
-                      onClick={() => handleArrayFilterChange('cities', city, false)}
-                      className="text-primary-600 hover:text-primary-800 ml-2"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
+            </span>
+            <input
+              type="text"
+              placeholder="Ajouter une ville..."
+              value={cityInput}
+              onChange={(event) => {
+                setCityInput(event.target.value);
+                setShowSuggestions(event.target.value.length >= 2);
+              }}
+              onKeyDown={handleCityInputKeyDown}
+              onFocus={() => cityInput.length >= 2 && setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              className="w-full rounded-2xl border border-secondary-200 bg-secondary-50/80 px-4 py-3 text-sm font-medium text-secondary-900 outline-none transition placeholder:text-secondary-400 focus:border-primary-300 focus:bg-white focus:ring-4 focus:ring-primary-100"
+            />
+            {showSuggestions && citySuggestions.length > 0 && (
+              <div className="absolute left-0 right-0 top-full z-20 mt-2 max-h-44 overflow-y-auto rounded-2xl border border-secondary-100 bg-white p-1 shadow-xl">
+                {citySuggestions.map((city) => (
+                  <button
+                    key={city}
+                    type="button"
+                    onClick={() => handleCityAdd(city)}
+                    className="w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-secondary-700 transition hover:bg-primary-50 hover:text-primary-700"
+                  >
+                    {city}
+                  </button>
                 ))}
               </div>
-            </div>
-          </div>
+            )}
+          </label>
 
-          {/* Status */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
+          <label className="block">
+            <span className="mb-2 flex items-center text-xs font-black uppercase tracking-[0.14em] text-secondary-500">
+              <Tag className="mr-1.5 h-3.5 w-3.5" />
               Statut
-            </label>
+            </span>
             <select
               value={filters.status || ''}
-              onChange={(e) => handleFilterChange('status', e.target.value || undefined)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              onChange={(event) => handleFilterChange('status', event.target.value || undefined)}
+              className="w-full rounded-2xl border border-secondary-200 bg-secondary-50/80 px-4 py-3 text-sm font-bold text-secondary-800 outline-none transition focus:border-primary-300 focus:bg-white focus:ring-4 focus:ring-primary-100"
             >
               <option value="">Tous les statuts</option>
-              {statusOptions.map(option => (
+              {statusOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
-          </div>
+          </label>
+        </div>
 
-          {/* Prix */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Prix (€)
-            </label>
-            <div className="space-y-2">
-              <input
-                type="number"
-                placeholder="Min"
-                value={filters.price_min || ''}
-                onChange={(e) => handleFilterChange('price_min', e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-              <input
-                type="number"
-                placeholder="Max"
-                value={filters.price_max || ''}
-                onChange={(e) => handleFilterChange('price_max', e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
+        {(filters.cities || []).length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {(filters.cities || []).map((city) => (
+              <button
+                key={city}
+                type="button"
+                onClick={() => handleArrayFilterChange('cities', city, false)}
+                className="inline-flex items-center rounded-full bg-primary-50 px-3 py-1.5 text-xs font-bold text-primary-700 ring-1 ring-primary-100 transition hover:bg-primary-100"
+              >
+                {city}
+                <X className="ml-2 h-3.5 w-3.5" />
+              </button>
+            ))}
           </div>
+        )}
 
-          {/* Surface */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Surface (m²)
-            </label>
-            <div className="space-y-2">
-              <input
-                type="number"
-                placeholder="Min"
-                value={filters.surface_min || ''}
-                onChange={(e) => handleFilterChange('surface_min', e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-              <input
-                type="number"
-                placeholder="Max"
-                value={filters.surface_max || ''}
-                onChange={(e) => handleFilterChange('surface_max', e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
+        <div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <span className="flex items-center text-xs font-black uppercase tracking-[0.14em] text-secondary-500">
+              <Building2 className="mr-1.5 h-3.5 w-3.5" />
+              Type de bien
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {propertyTypes.map((type) => {
+              const selected = (filters.property_types || []).includes(type.value);
+              return (
+                <button
+                  key={type.value}
+                  type="button"
+                  onClick={() => handleArrayFilterChange('property_types', type.value, !selected)}
+                  className={`rounded-full px-3 py-2 text-sm font-bold ring-1 transition ${
+                    selected
+                      ? 'bg-secondary-950 text-white ring-secondary-950'
+                      : 'bg-secondary-50 text-secondary-600 ring-secondary-100 hover:bg-secondary-100'
+                  }`}
+                >
+                  {type.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-          <div className="flex items-center space-x-4">
-            <span className="text-sm text-secondary-600">
-              {activeFiltersCount} filtre{activeFiltersCount > 1 ? 's' : ''} actif{activeFiltersCount > 1 ? 's' : ''}
-            </span>
-          </div>
-          
-          {activeFiltersCount > 0 && (
-            <button
-              onClick={onClearFilters}
-              className="flex items-center space-x-1 text-sm text-secondary-500 hover:text-secondary-700"
-            >
-              <X className="h-4 w-4" />
-              <span>Effacer les filtres</span>
-            </button>
+        <div className="rounded-2xl border border-secondary-100 bg-secondary-50/70 p-3">
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((value) => !value)}
+            className="flex w-full items-center justify-between text-left text-sm font-black text-secondary-900"
+          >
+            Filtres avancés
+            <span className="text-xs font-bold text-primary-600">{showAdvanced ? 'Réduire' : 'Prix / surface'}</span>
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+              <input
+                type="number"
+                placeholder="Prix min"
+                value={filters.price_min || ''}
+                onChange={(event) => handleFilterChange('price_min', event.target.value ? Number(event.target.value) : undefined)}
+                className="rounded-2xl border border-secondary-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-primary-300 focus:ring-4 focus:ring-primary-100"
+              />
+              <input
+                type="number"
+                placeholder="Prix max"
+                value={filters.price_max || ''}
+                onChange={(event) => handleFilterChange('price_max', event.target.value ? Number(event.target.value) : undefined)}
+                className="rounded-2xl border border-secondary-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-primary-300 focus:ring-4 focus:ring-primary-100"
+              />
+              <input
+                type="number"
+                placeholder="Surface min"
+                value={filters.surface_min || ''}
+                onChange={(event) => handleFilterChange('surface_min', event.target.value ? Number(event.target.value) : undefined)}
+                className="rounded-2xl border border-secondary-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-primary-300 focus:ring-4 focus:ring-primary-100"
+              />
+              <input
+                type="number"
+                placeholder="Surface max"
+                value={filters.surface_max || ''}
+                onChange={(event) => handleFilterChange('surface_max', event.target.value ? Number(event.target.value) : undefined)}
+                className="rounded-2xl border border-secondary-200 bg-white px-4 py-3 text-sm font-medium outline-none focus:border-primary-300 focus:ring-4 focus:ring-primary-100"
+              />
+            </div>
           )}
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 

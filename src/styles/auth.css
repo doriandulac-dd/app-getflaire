@@ -1,292 +1,59 @@
-/* Auth page specific styles */
 .auth-page {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background: linear-gradient(90deg, #e2e2e2, #c9d6ff);
-  font-family: "Poppins", sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(255, 178, 63, 0.24), transparent 26rem),
+    radial-gradient(circle at 85% 12%, rgba(27, 38, 59, 0.18), transparent 24rem),
+    linear-gradient(140deg, #fefaf2 0%, #f8fafc 40%, #edf2f7 100%);
 }
 
-.auth-container {
-  position: relative;
-  width: 900px;
-  height: 700px;
-  background: #fff;
-  margin: 20px;
-  border-radius: 30px;
-  box-shadow: 0 0 30px rgba(0, 0, 0, 0.2);
-  overflow: hidden;
+.auth-grid {
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.1) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.9), transparent 92%);
 }
 
-.auth-container h1 {
-  font-size: 36px;
-  margin: -10px 0;
-  font-family: "Poppins", sans-serif;
+.auth-orb {
+  pointer-events: none;
+  mix-blend-mode: screen;
 }
 
-.auth-container p {
-  font-size: 14.5px;
-  margin: 15px 0;
-  font-family: "Poppins", sans-serif;
+.auth-orb-primary {
+  background: rgba(255, 178, 63, 0.34);
 }
 
-.auth-container form {
-  width: 100%;
-  height: 100%;
-  overflow-y: auto;
-  height: 100%;
-  overflow-y: auto;
+.auth-orb-secondary {
+  background: rgba(93, 173, 236, 0.2);
 }
 
-.form-box {
-  position: absolute;
-  right: 0;
-  width: 50%;
-  height: 100%;
-  background: #fff;
-  display: flex;
-  align-items: center;
-  color: #333;
-  text-align: center;
-  padding: 40px;
-  z-index: 1;
-  transition: 0.6s ease-in-out 1.2s, visibility 0s 1s;
+.auth-orb-accent {
+  background: rgba(71, 85, 105, 0.18);
 }
 
-.auth-container.active .form-box {
-  right: 50%;
+.auth-panel-shine {
+  background:
+    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.15), transparent 18rem),
+    radial-gradient(circle at 80% 20%, rgba(255, 178, 63, 0.18), transparent 22rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), transparent 35%);
 }
 
-.form-box.register {
-  visibility: hidden;
+.auth-panel-noise {
+  background-image:
+    radial-gradient(rgba(255, 255, 255, 0.08) 0.7px, transparent 0.7px),
+    radial-gradient(rgba(255, 255, 255, 0.05) 0.7px, transparent 0.7px);
+  background-position: 0 0, 14px 14px;
+  background-size: 28px 28px;
 }
 
-.auth-container.active .form-box.register {
-  visibility: visible;
-}
-
-.input-box {
-  position: relative;
-  margin: 30px 0;
-}
-
-.input-box input {
-  width: 100%;
-  padding: 13px 50px 13px 20px;
-  background: #eee;
-  border-radius: 8px;
-  border: none;
-  outline: none;
-  font-size: 16px;
-  color: #333;
-  font-weight: 500;
-  font-family: "Poppins", sans-serif;
-}
-
-.input-box input::placeholder {
-  color: #888;
-  font-weight: 400;
-}
-
-.input-box input:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.input-box i {
-  position: absolute;
-  right: 20px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 20px;
-}
-
-.forgot-link {
-  margin: -15px 0 15px;
-}
-
-.forgot-link a {
-  font-size: 14.5px;
-  color: #333;
-  text-decoration: none;
-}
-
-.forgot-link a:hover {
-  text-decoration: underline;
-}
-
-.btn {
-  width: 100%;
-  height: 48px;
-  background: var(--color-primary-500);
-  border-radius: 8px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  color: #fff;
-  font-weight: 600;
-  font-family: "Poppins", sans-serif;
-  transition: all 0.3s ease;
-}
-
-.btn:hover:not(:disabled) {
-  background: var(--color-primary-600);
-  transform: translateY(-1px);
-}
-
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.toggle-box {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-}
-
-.toggle-box::before {
-  content: "";
-  position: absolute;
-  left: -250%;
-  width: 300%;
-  height: 100%;
-  background: var(--color-primary-500);
-  border-radius: 150px;
-  z-index: 2;
-  transition: 1.8s ease-in-out;
-}
-
-.auth-container.active .toggle-box::before {
-  left: 50%;
-}
-
-.toggle-panel {
-  position: absolute;
-  width: 50%;
-  height: 100%;
-  color: #fff;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 2;
-  transition: 0.6s ease-in-out;
-}
-
-.toggle-panel.toggle-left {
-  left: 0;
-  transition-delay: 1.2s;
-}
-
-.auth-container.active .toggle-panel.toggle-left {
-  left: -50%;
-  transition-delay: 0.6s;
-}
-
-.toggle-panel.toggle-right {
-  right: -50%;
-  transition-delay: 0.6s;
-}
-
-.auth-container.active .toggle-panel.toggle-right {
-  right: 0;
-  transition-delay: 1.2s;
-}
-
-.toggle-panel p {
-  margin-bottom: 20px;
-}
-
-.toggle-panel .btn {
-  width: 160px;
-  height: 46px;
-  background: transparent;
-  border: 2px solid #fff;
-  box-shadow: none;
-}
-
-.toggle-panel .btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-/* Mobile Responsive */
-@media screen and (max-width: 650px) {
-  .auth-container {
-    height: calc(100vh - 40px);
+@media (max-width: 1023px) {
+  .auth-page {
+    background:
+      radial-gradient(circle at top, rgba(255, 178, 63, 0.2), transparent 18rem),
+      linear-gradient(180deg, #fffaf2 0%, #f8fafc 52%, #edf2f7 100%);
   }
 
-  .form-box {
-    bottom: 0;
-    width: 100%;
-    height: 70%;
-  }
-
-  .auth-container.active .form-box {
-    right: 0;
-    bottom: 30%;
-  }
-
-  .toggle-box::before {
-    left: 0;
-    top: -270%;
-    width: 100%;
-    height: 300%;
-    border-radius: 20vw;
-  }
-
-  .auth-container.active .toggle-box::before {
-    left: 0;
-    top: 70%;
-  }
-
-  .auth-container.active .toggle-panel.toggle-left {
-    left: 0;
-    top: -30%;
-  }
-
-  .toggle-panel {
-    width: 100%;
-    height: 30%;
-  }
-
-  .toggle-panel.toggle-left {
-    top: 0;
-  }
-
-  .toggle-panel.toggle-right {
-    right: 0;
-    bottom: -30%;
-  }
-
-  .auth-container.active .toggle-panel.toggle-right {
-    bottom: 0;
-  }
-}
-
-@media screen and (max-width: 400px) {
-  .form-box {
-    padding: 20px;
-  }
-
-  .toggle-panel h1 {
-    font-size: 30px;
-  }
-
-  .input-box {
-    margin: 20px 0;
-  }
-
-  .input-box input {
-    padding: 12px 45px 12px 15px;
-    font-size: 14px;
-  }
-
-  .input-box i {
-    right: 15px;
-    font-size: 18px;
+  .auth-grid {
+    opacity: 0.5;
+    background-size: 32px 32px;
   }
 }

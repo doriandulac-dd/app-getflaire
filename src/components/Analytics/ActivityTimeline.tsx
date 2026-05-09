@@ -1,8 +1,8 @@
 import React from 'react';
-import { Clock, Phone, Calendar, Eye, Bell } from 'lucide-react';
-import { ActivityItem } from '../../types/analytics';
+import { Bell, Calendar, Clock, Eye, Phone } from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { ActivityItem } from '../../types/analytics';
 
 interface ActivityTimelineProps {
   activities: ActivityItem[];
@@ -10,45 +10,30 @@ interface ActivityTimelineProps {
 }
 
 const ActivityTimeline: React.FC<ActivityTimelineProps> = ({ activities, loading = false }) => {
-  const getActivityIcon = (type: string) => {
+  const getActivityMeta = (type: string) => {
     switch (type) {
       case 'appel':
-        return <Phone className="h-4 w-4 text-green-600" />;
+        return { icon: Phone, className: 'bg-emerald-50 text-emerald-700 ring-emerald-100' };
       case 'rappel':
-        return <Calendar className="h-4 w-4 text-orange-600" />;
+        return { icon: Calendar, className: 'bg-primary-50 text-primary-700 ring-primary-100' };
       case 'surveillance':
-        return <Eye className="h-4 w-4 text-blue-600" />;
+        return { icon: Eye, className: 'bg-blue-50 text-blue-700 ring-blue-100' };
       case 'annonce':
-        return <Bell className="h-4 w-4 text-purple-600" />;
+        return { icon: Bell, className: 'bg-indigo-50 text-indigo-700 ring-indigo-100' };
       default:
-        return <Clock className="h-4 w-4 text-gray-600" />;
-    }
-  };
-
-  const getActivityColor = (type: string) => {
-    switch (type) {
-      case 'appel':
-        return 'bg-green-100 border-green-200';
-      case 'rappel':
-        return 'bg-orange-100 border-orange-200';
-      case 'surveillance':
-        return 'bg-blue-100 border-blue-200';
-      case 'annonce':
-        return 'bg-purple-100 border-purple-200';
-      default:
-        return 'bg-gray-100 border-gray-200';
+        return { icon: Clock, className: 'bg-secondary-50 text-secondary-700 ring-secondary-100' };
     }
   };
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <div key={i} className="flex items-start space-x-3 animate-pulse">
-            <div className="h-8 w-8 bg-gray-200 rounded-full"></div>
+      <div className="space-y-3">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="flex items-start gap-3 rounded-2xl bg-secondary-50 p-3">
+            <div className="h-10 w-10 animate-pulse rounded-2xl bg-secondary-100" />
             <div className="flex-1 space-y-2">
-              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-              <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+              <div className="h-4 w-3/4 animate-pulse rounded bg-secondary-100" />
+              <div className="h-3 w-1/2 animate-pulse rounded bg-secondary-100" />
             </div>
           </div>
         ))}
@@ -58,49 +43,37 @@ const ActivityTimeline: React.FC<ActivityTimelineProps> = ({ activities, loading
 
   if (!activities || activities.length === 0) {
     return (
-      <div className="text-center py-8">
-        <Clock className="mx-auto h-12 w-12 text-gray-400" />
-        <h3 className="mt-2 text-sm font-medium text-secondary-900">
-          Aucune activité récente
-        </h3>
-        <p className="mt-1 text-sm text-secondary-500">
-          Vos actions apparaîtront ici
-        </p>
+      <div className="rounded-3xl bg-secondary-50 py-10 text-center">
+        <Clock className="mx-auto h-10 w-10 text-secondary-300" />
+        <h3 className="mt-3 text-sm font-black text-secondary-950">Aucune activité récente</h3>
+        <p className="mt-1 text-sm font-medium text-secondary-500">Vos actions apparaîtront ici</p>
       </div>
     );
   }
 
   return (
-    <div className="max-h-96 overflow-y-auto">
-      <div className="space-y-4">
-        {activities.map((activity, index) => (
-          <div key={activity.id} className="flex items-start space-x-3">
-            <div className={`
-              flex items-center justify-center w-8 h-8 rounded-full border-2 
-              ${getActivityColor(activity.type)}
-            `}>
-              {getActivityIcon(activity.type)}
-            </div>
-            
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-medium text-secondary-900 truncate">
-                  {activity.description}
-                </p>
-                <span className="text-xs text-secondary-500 ml-2 flex-shrink-0">
-                  {formatDistanceToNow(parseISO(activity.timestamp), { 
-                    addSuffix: true, 
-                    locale: fr 
-                  })}
-                </span>
+    <div className="max-h-[440px] overflow-y-auto pr-1">
+      <div className="space-y-3">
+        {activities.map((activity) => {
+          const meta = getActivityMeta(activity.type);
+          const Icon = meta.icon;
+          return (
+            <div key={activity.id} className="flex items-start gap-3 rounded-2xl border border-secondary-100 bg-white p-3 shadow-sm">
+              <div className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl ring-1 ${meta.className}`}>
+                <Icon className="h-4 w-4" />
               </div>
-              
-              {index < activities.length - 1 && (
-                <div className="mt-3 border-l-2 border-gray-100 ml-3 h-4"></div>
-              )}
+              <div className="min-w-0 flex-1">
+                <p className="line-clamp-2 text-sm font-bold text-secondary-950">{activity.description}</p>
+                <p className="mt-1 text-xs font-medium text-secondary-500">
+                  {formatDistanceToNow(parseISO(activity.timestamp), {
+                    addSuffix: true,
+                    locale: fr,
+                  })}
+                </p>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

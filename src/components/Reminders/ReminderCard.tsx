@@ -1,17 +1,19 @@
-import React, { useState } from 'react';
-import { 
-  Clock, 
-  Phone, 
-  CheckCircle, 
-  Calendar, 
-  MapPin, 
-  Edit3, 
-  Trash2, 
+import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  AlertCircle,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Edit3,
   ExternalLink,
-  AlertCircle
+  MapPin,
+  MessageSquare,
+  Phone,
+  Sparkles,
+  Trash2,
 } from 'lucide-react';
 import { ProcessedReminder } from '../../types/reminder';
-import { useNavigate } from 'react-router-dom';
 
 interface ReminderCardProps {
   reminder: ProcessedReminder;
@@ -30,102 +32,97 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
   const [loading, setLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
 
-  // Helper function to process a single URL string (handles comma-separated)
-  const processSingleUrl = (url: string): string => {
-    if (!url || typeof url !== 'string') return '';
-    const trimmed = url.trim();
-    // If it's a comma-separated string, take the first part
-    if (trimmed.includes(',')) {
-      return trimmed.split(',')[0].trim();
-    }
-    return trimmed;
-  };
+  const imageUrl = useMemo(() => {
+    const processSingleUrl = (url: string): string => {
+      if (!url || typeof url !== 'string') return '';
+      const trimmed = url.trim();
+      return trimmed.includes(',') ? trimmed.split(',')[0].trim() : trimmed;
+    };
 
-  const getImageUrl = () => {
-    const val = reminder.image_urls;
-    if (!val) return null;
+    const value = reminder.image_urls;
+    if (!value) return null;
 
     const images: string[] = [];
 
-    // Case 1: val is already an array (e.g., from JSONB directly)
-    if (Array.isArray(val)) {
-      for (const item of val) {
-        if (typeof item === 'string' && item.trim()) {
-          images.push(processSingleUrl(item));
-        }
-      }
-    }
-    // Case 2: val is a string (could be single URL, comma-separated, or JSON stringified)
-    else if (typeof val === 'string') {
-      // Try parsing as JSON array or object
-      if (val.trim().startsWith('[') || val.trim().startsWith('{')) {
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (typeof item === 'string' && item.trim()) images.push(processSingleUrl(item));
+      });
+    } else if (typeof value === 'string') {
+      if (value.trim().startsWith('[') || value.trim().startsWith('{')) {
         try {
-          const parsed = JSON.parse(val);
+          const parsed = JSON.parse(value);
           if (Array.isArray(parsed)) {
-            for (const item of parsed) {
-              if (typeof item === 'string' && item.trim()) {
-                images.push(processSingleUrl(item));
-              }
-            }
-          } else if (typeof parsed === 'object' && parsed !== null && typeof parsed.url === 'string' && parsed.url.startsWith('http')) {
+            parsed.forEach((item) => {
+              if (typeof item === 'string' && item.trim()) images.push(processSingleUrl(item));
+            });
+          } else if (typeof parsed === 'object' && parsed !== null && typeof parsed.url === 'string') {
             images.push(processSingleUrl(parsed.url));
           }
         } catch {
-          // Not a valid JSON, treat as plain string
-          if (val.trim()) {
-            images.push(processSingleUrl(val));
-          }
+          if (value.trim()) images.push(processSingleUrl(value));
         }
-      } else {
-        // Plain string (single URL or comma-separated)
-        if (val.trim()) {
-          images.push(processSingleUrl(val));
-        }
+      } else if (value.trim()) {
+        images.push(processSingleUrl(value));
       }
     }
 
-    // On retourne la première qui commence bien par http
-    return images.find(x => x.startsWith('http')) || null;
-  };
+    return images.find((item) => item.startsWith('http')) || null;
+  }, [reminder.image_urls]);
 
-  const getTypeConfig = (type: string) => {
-    switch (type) {
+  const typeConfig = useMemo(() => {
+    switch (reminder.type) {
       case 'to_process':
-        return { icon: Clock, label: 'À traiter', color: 'text-orange-600 bg-orange-50 border-orange-200' };
+        return { icon: Clock, label: 'À traiter', className: 'bg-orange-50 text-orange-700 ring-orange-200' };
       case 'to_call':
-        return { icon: Phone, label: 'À rappeler', color: 'text-blue-600 bg-blue-50 border-blue-200' };
+        return { icon: Phone, label: 'À rappeler', className: 'bg-blue-50 text-blue-700 ring-blue-200' };
       case 'called':
-        return { icon: CheckCircle, label: 'Appelé', color: 'text-green-600 bg-green-50 border-green-200' };
+        return { icon: CheckCircle, label: 'Appelé', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' };
       case 'rdv':
-        return { icon: Calendar, label: 'RDV', color: 'text-purple-600 bg-purple-50 border-purple-200' };
+        return { icon: Calendar, label: 'RDV', className: 'bg-indigo-50 text-indigo-700 ring-indigo-200' };
       default:
-        return { icon: Clock, label: type, color: 'text-gray-600 bg-gray-50 border-gray-200' };
+        return { icon: Clock, label: reminder.type, className: 'bg-secondary-50 text-secondary-700 ring-secondary-200' };
     }
-  };
+  }, [reminder.type]);
 
-  const getStatusConfig = (status: string) => {
-    switch (status) {
-      case 'pending': return { label: 'À faire', color: 'text-orange-600 bg-orange-50' };
-      case 'completed': return { label: 'Terminé', color: 'text-green-600 bg-green-50' };
-      case 'overdue': return { label: 'En retard', color: 'text-red-600 bg-red-50' };
-      default: return { label: status, color: 'text-gray-600 bg-gray-50' };
+  const statusConfig = useMemo(() => {
+    switch (reminder.status) {
+      case 'pending':
+        return { label: 'À faire', className: 'bg-primary-50 text-primary-700 ring-primary-200' };
+      case 'completed':
+        return { label: 'Terminé', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' };
+      case 'overdue':
+        return { label: 'En retard', className: 'bg-red-50 text-red-700 ring-red-200' };
+      default:
+        return { label: reminder.status, className: 'bg-secondary-50 text-secondary-700 ring-secondary-200' };
     }
-  };
+  }, [reminder.status]);
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "";
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('fr-FR', {
+  const schedule = useMemo(() => {
+    const date = new Date(reminder.scheduled_date);
+    if (isNaN(date.getTime())) {
+      return { label: 'Date non renseignée', relative: '' };
+    }
+
+    const now = new Date();
+    const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    const label = new Intl.DateTimeFormat('fr-FR', {
       day: 'numeric',
       month: 'short',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     }).format(date);
-  };
+
+    let relative = "Aujourd'hui";
+    if (diffDays < 0) relative = `En retard de ${Math.abs(diffDays)} jour${Math.abs(diffDays) > 1 ? 's' : ''}`;
+    if (diffDays > 0) relative = `Dans ${diffDays} jour${diffDays > 1 ? 's' : ''}`;
+
+    return { label, relative };
+  }, [reminder.scheduled_date]);
 
   const formatPrice = (price: number) => {
-    if (!price) return "";
+    if (!price) return '';
     return new Intl.NumberFormat('fr-FR', {
       style: 'currency',
       currency: 'EUR',
@@ -133,10 +130,7 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
     }).format(price);
   };
 
-  const typeConfig = getTypeConfig(reminder.type);
-  const statusConfig = getStatusConfig(reminder.status);
   const TypeIcon = typeConfig.icon;
-  const imageUrl = getImageUrl();
 
   const handleMarkCompleted = async () => {
     setLoading(true);
@@ -153,136 +147,152 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
   };
 
   return (
-    <div className="motion-safe-card overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-sm" data-gsap-reveal>
-      {/* Image */}
-      {imageUrl && !imageError && (
-        <div className="relative h-32 bg-gray-200 rounded-xl overflow-hidden mb-4">
-          <img 
-            src={imageUrl} 
-            alt={reminder.annonce_title || "image annonce"}
-            className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-            onError={() => setImageError(true)}
-            loading="lazy"
-          />
-        </div>
-      )}
-      
-      {/* Header */}
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-center space-x-3">
-          <div className={`p-2 rounded-lg border ${typeConfig.color}`}>
-            <TypeIcon className="h-4 w-4" />
-          </div>
-          <div>
-            <h3 className="font-medium text-secondary-900 text-sm">
-              {typeConfig.label}
-            </h3>
-            <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${statusConfig.color}`}>
-              {reminder.status === 'overdue' && <AlertCircle className="h-3 w-3 mr-1" />}
-              {statusConfig.label}
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-1">
-          <button
-            onClick={() => onEdit(reminder)}
-            disabled={loading}
-            className="p-1.5 text-secondary-500 hover:text-secondary-700 hover:bg-secondary-50 rounded-md transition-colors"
-            title="Modifier"
-          >
-            <Edit3 className="h-4 w-4" />
-          </button>
-          <button
-            onClick={handleDelete}
-            disabled={loading}
-            className="p-1.5 text-error-500 hover:text-error-700 hover:bg-error-50 rounded-md transition-colors"
-            title="Supprimer"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Annonce info */}
-      <div className="mb-3">
+    <article className="group overflow-hidden rounded-3xl border border-white bg-white shadow-sm ring-1 ring-secondary-100 transition duration-300 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-secondary-900/10">
+      <div className="grid gap-0 lg:grid-cols-[260px_1fr]">
         <button
+          type="button"
           onClick={() => navigate(`/pige/${reminder.annonce_id}`)}
-          className="text-left hover:text-primary-600 transition-colors group"
+          className="relative min-h-56 overflow-hidden bg-secondary-100 text-left lg:min-h-full"
         >
-          <h4 className="font-medium text-secondary-900 group-hover:text-primary-600 line-clamp-2 mb-1">
-            {reminder.annonce_title}
-          </h4>
-        </button>
-        
-        <div className="flex items-center justify-between text-sm text-secondary-600">
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center">
-              <MapPin className="h-3 w-3 mr-1" />
-              <span>{reminder.city}</span>
+          {imageUrl && !imageError ? (
+            <img
+              src={imageUrl}
+              alt={reminder.annonce_title || 'image annonce'}
+              className="h-full min-h-56 w-full object-cover transition duration-700 group-hover:scale-105"
+              onError={() => setImageError(true)}
+              loading="lazy"
+            />
+          ) : (
+            <div className="flex h-full min-h-56 w-full items-center justify-center bg-gradient-to-br from-secondary-100 to-secondary-200 text-sm font-bold text-secondary-400">
+              Pas d'image
             </div>
-            {reminder.type_de_bien && (
-              <span className="px-2 py-1 bg-secondary-100 text-secondary-700 rounded text-xs">
-                {reminder.type_de_bien}
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-secondary-950/75 via-secondary-950/10 to-transparent" />
+          <div className="absolute bottom-4 left-4 right-4">
+            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black ring-1 ${typeConfig.className}`}>
+              <TypeIcon className="h-3.5 w-3.5" />
+              {typeConfig.label}
+            </span>
+            <p className="mt-3 line-clamp-2 text-lg font-black leading-tight text-white">{reminder.annonce_title}</p>
+          </div>
+        </button>
+
+        <div className="flex flex-col gap-4 p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black ring-1 ${statusConfig.className}`}>
+                  {reminder.status === 'overdue' && <AlertCircle className="h-3.5 w-3.5" />}
+                  {statusConfig.label}
+                </span>
+                {reminder.type_de_bien && (
+                  <span className="rounded-full bg-secondary-100 px-3 py-1 text-xs font-bold text-secondary-700">
+                    {reminder.type_de_bien}
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => navigate(`/pige/${reminder.annonce_id}`)}
+                className="mt-3 text-left"
+              >
+                <h3 className="line-clamp-2 text-xl font-black leading-tight text-secondary-950 transition group-hover:text-primary-700">
+                  {reminder.title || reminder.annonce_title}
+                </h3>
+              </button>
+
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-sm font-semibold text-secondary-500">
+                {reminder.city && (
+                  <span className="inline-flex items-center">
+                    <MapPin className="mr-1.5 h-4 w-4 text-primary-500" />
+                    {reminder.city}
+                  </span>
+                )}
+                {formatPrice(reminder.price) && (
+                  <span className="font-black text-primary-700">{formatPrice(reminder.price)}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-secondary-100 bg-secondary-50/80 p-3 text-sm">
+              <div className="flex items-center gap-2 font-black text-secondary-950">
+                <Calendar className="h-4 w-4 text-primary-500" />
+                {schedule.label}
+              </div>
+              <p className={`mt-1 text-xs font-bold ${reminder.status === 'overdue' ? 'text-red-600' : 'text-secondary-500'}`}>
+                {schedule.relative}
+              </p>
+            </div>
+          </div>
+
+          {reminder.note && (
+            <div className="rounded-2xl border border-primary-100 bg-primary-50 p-3 text-sm text-primary-900">
+              <div className="mb-1 flex items-center gap-2 font-black">
+                <MessageSquare className="h-4 w-4" />
+                Note
+              </div>
+              <p className="leading-6">{reminder.note}</p>
+            </div>
+          )}
+
+          <div className="mt-auto flex flex-col gap-3 border-t border-secondary-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onEdit(reminder)}
+                disabled={loading}
+                className="inline-flex items-center rounded-2xl border border-secondary-200 bg-white px-3 py-2 text-sm font-bold text-secondary-700 transition hover:border-primary-200 hover:text-primary-700 disabled:opacity-50"
+              >
+                <Edit3 className="mr-2 h-4 w-4" />
+                Modifier
+              </button>
+              {reminder.annonce_url && (
+                <a
+                  href={reminder.annonce_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center rounded-2xl border border-secondary-200 bg-white px-3 py-2 text-sm font-bold text-secondary-700 transition hover:border-primary-200 hover:text-primary-700"
+                >
+                  <ExternalLink className="mr-2 h-4 w-4" />
+                  Source
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={loading}
+                className="inline-flex items-center rounded-2xl border border-red-100 bg-red-50 px-3 py-2 text-sm font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Supprimer
+              </button>
+            </div>
+
+            {reminder.status === 'pending' || reminder.status === 'overdue' ? (
+              <button
+                type="button"
+                onClick={handleMarkCompleted}
+                disabled={loading}
+                className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-4 py-2.5 text-sm font-black text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {loading ? (
+                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                ) : (
+                  <Sparkles className="mr-2 h-4 w-4" />
+                )}
+                Terminer
+              </button>
+            ) : (
+              <span className="inline-flex items-center rounded-2xl bg-emerald-50 px-4 py-2.5 text-sm font-black text-emerald-700">
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Action terminée
               </span>
             )}
           </div>
-          <span className="font-medium text-primary-600">
-            {formatPrice(reminder.price)}
-          </span>
         </div>
       </div>
-
-      {/* Date and time */}
-      <div className="mb-3 rounded-xl bg-gray-50 p-3">
-        <div className="flex items-center text-sm text-secondary-700">
-          <Calendar className="h-4 w-4 mr-2" />
-          <span>
-            {reminder.type === 'to_call' || reminder.type === 'rdv'
-              ? `Prévu le ${formatDate(reminder.scheduled_date)}`
-              : `Créé le ${formatDate(reminder.scheduled_date)}`
-            }
-          </span>
-        </div>
-      </div>
-
-      {/* Note */}
-      {reminder.note && (
-        <div className="mb-3">
-          <p className="text-sm text-secondary-600 bg-gray-50 p-2 rounded-md">
-            {reminder.note}
-          </p>
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-        <div className="flex items-center space-x-2">
-          {reminder.annonce_url && (
-            <a
-              href={reminder.annonce_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center text-xs text-secondary-600 hover:text-secondary-700"
-            >
-              <ExternalLink className="h-3 w-3 mr-1" />
-              Voir annonce
-            </a>
-          )}
-        </div>
-        
-        {reminder.status === 'pending' && (
-          <button
-            onClick={handleMarkCompleted}
-            disabled={loading}
-            className="inline-flex items-center rounded-lg bg-green-100 px-3 py-1.5 text-sm font-semibold text-green-700 transition-colors hover:bg-green-200 disabled:opacity-50"
-          >
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Marquer terminé
-          </button>
-        )}
-      </div>
-    </div>
+    </article>
   );
 };
 

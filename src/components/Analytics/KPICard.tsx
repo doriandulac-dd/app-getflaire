@@ -1,13 +1,15 @@
 import React from 'react';
-import { DivideIcon as LucideIcon, TrendingUp, TrendingDown } from 'lucide-react';
+import { DivideIcon as LucideIcon, TrendingDown, TrendingUp } from 'lucide-react';
 
 interface KPICardProps {
   title: string;
   value: number;
   variation?: number;
   icon: LucideIcon;
-  color?: 'primary' | 'success' | 'warning' | 'secondary';
+  color?: 'primary' | 'success' | 'warning' | 'secondary' | 'danger';
   loading?: boolean;
+  suffix?: string;
+  description?: string;
 }
 
 const KPICard: React.FC<KPICardProps> = ({
@@ -17,61 +19,68 @@ const KPICard: React.FC<KPICardProps> = ({
   icon: Icon,
   color = 'primary',
   loading = false,
+  suffix = '',
+  description,
 }) => {
   const colorClasses = {
-    primary: 'bg-primary-500 text-white',
-    success: 'bg-green-500 text-white',
-    warning: 'bg-orange-500 text-white',
-    secondary: 'bg-secondary-500 text-white',
+    primary: 'from-primary-500 to-orange-500',
+    success: 'from-emerald-500 to-teal-600',
+    warning: 'from-amber-500 to-primary-500',
+    secondary: 'from-secondary-700 to-secondary-950',
+    danger: 'from-red-500 to-orange-500',
   };
 
-  const formatNumber = (num: number) => {
-    return new Intl.NumberFormat('fr-FR').format(num);
-  };
+  const formatNumber = (num: number) => new Intl.NumberFormat('fr-FR').format(num || 0);
 
   if (loading) {
     return (
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 animate-pulse">
-        <div className="flex items-center justify-between">
-          <div className="flex-1">
-            <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
-            <div className="h-8 bg-gray-200 rounded w-16 mb-2"></div>
-            <div className="h-3 bg-gray-200 rounded w-20"></div>
+      <div className="overflow-hidden rounded-3xl border border-white bg-white p-5 shadow-sm ring-1 ring-secondary-100">
+        <div className="animate-pulse">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <div className="mb-3 h-3 w-28 rounded bg-secondary-100" />
+              <div className="mb-3 h-8 w-20 rounded bg-secondary-100" />
+              <div className="h-3 w-36 rounded bg-secondary-100" />
+            </div>
+            <div className="h-12 w-12 rounded-2xl bg-secondary-100" />
           </div>
-          <div className="h-12 w-12 bg-gray-200 rounded-lg"></div>
         </div>
       </div>
     );
   }
 
+  const positive = (variation || 0) >= 0;
+
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow">
-      <div className="flex items-center justify-between">
-        <div className="flex-1">
-          <p className="text-sm font-medium text-secondary-600 mb-1">{title}</p>
-          <p className="text-2xl font-bold text-secondary-900 mb-2">
+    <div className="group overflow-hidden rounded-3xl border border-white bg-white p-5 shadow-sm ring-1 ring-secondary-100 transition duration-300 hover:-translate-y-0.5 hover:shadow-xl">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-secondary-500">{title}</p>
+          <p className="mt-3 text-3xl font-black text-secondary-950">
             {formatNumber(value)}
+            {suffix && <span className="ml-1 text-lg text-secondary-500">{suffix}</span>}
           </p>
-          {variation !== undefined && (
-            <div className="flex items-center">
-              {variation >= 0 ? (
-                <TrendingUp className="h-3 w-3 text-green-500 mr-1" />
-              ) : (
-                <TrendingDown className="h-3 w-3 text-red-500 mr-1" />
-              )}
-              <span className={`text-xs font-medium ${
-                variation >= 0 ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {variation >= 0 ? '+' : ''}{variation}%
-              </span>
-              <span className="text-xs text-secondary-500 ml-1">vs. période précédente</span>
-            </div>
-          )}
+          {description && <p className="mt-1 text-xs font-medium text-secondary-500">{description}</p>}
         </div>
-        <div className={`h-12 w-12 rounded-lg flex items-center justify-center ${colorClasses[color]}`}>
-          <Icon className="h-6 w-6" />
+        <div className={`rounded-2xl bg-gradient-to-br ${colorClasses[color]} p-3 text-white shadow-lg`}>
+          <Icon className="h-5 w-5" />
         </div>
       </div>
+
+      {variation !== undefined && (
+        <div className="mt-4 flex items-center gap-2 rounded-2xl bg-secondary-50 px-3 py-2">
+          {positive ? (
+            <TrendingUp className="h-4 w-4 text-emerald-600" />
+          ) : (
+            <TrendingDown className="h-4 w-4 text-red-600" />
+          )}
+          <span className={`text-sm font-black ${positive ? 'text-emerald-700' : 'text-red-700'}`}>
+            {positive ? '+' : ''}
+            {variation}%
+          </span>
+          <span className="text-xs font-medium text-secondary-500">vs période précédente</span>
+        </div>
+      )}
     </div>
   );
 };

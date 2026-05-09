@@ -12,6 +12,17 @@ export interface WeightedKeyword {
   importance: ImportanceLevel;
 }
 
+export interface ScoreWeights {
+  localisation: number;
+  budget: number;
+  type: number;
+  surface: number;
+  exterieur: number;
+  etat: number;
+  dpe: number;
+  motsCles: number;
+}
+
 export interface SmartAlertCriteria {
   acceptedCities: string[];
   excludedCities: string[];
@@ -30,6 +41,7 @@ export interface SmartAlertCriteria {
   negativeKeywords: WeightedKeyword[];
   sellerType: 'particulier' | 'pro' | 'both' | 'off_market' | 'all';
   searchMode: SearchMode;
+  scoreWeights: ScoreWeights;
   naturalLanguage?: string;
   investor?: {
     enabled: boolean;

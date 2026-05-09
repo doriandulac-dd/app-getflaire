@@ -43,6 +43,17 @@ type AnnonceRow = {
   supprimee?: boolean | null;
 };
 
+const defaultScoreWeights = {
+  localisation: 25,
+  budget: 20,
+  type: 15,
+  surface: 15,
+  exterieur: 10,
+  etat: 5,
+  dpe: 5,
+  motsCles: 5,
+};
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -52,8 +63,18 @@ const json = (body: unknown, status = 200) =>
 const normalize = (value?: string | null) =>
   (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
+const resolveScoreWeights = (options: Record<string, unknown>) => ({
+  ...defaultScoreWeights,
+  ...((options.scoreWeights && typeof options.scoreWeights === 'object') ? options.scoreWeights as Record<string, number> : {}),
+});
+
+const weightedPoints = (ratio: number, maxPoints: number) =>
+  Math.max(0, Math.min(maxPoints, Math.round(ratio * maxPoints)));
+
 function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
   const options = alert.options_avancees || {};
+  const weights = resolveScoreWeights(options);
+  const totalWeight = Math.max(1, Object.values(weights).reduce((sum, value) => sum + Number(value || 0), 0));
   const text = normalize(`${annonce.title || ''} ${annonce.description || ''} ${annonce.city || ''} ${annonce.type_de_bien || ''} ${annonce.dpe || ''}`);
   const points_forts: string[] = [];
   const points_faibles: string[] = [];
@@ -70,28 +91,30 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
 
   const city = normalize(annonce.city);
   const targetCity = normalize(alert.ville);
-  if (!targetCity) score_breakdown.localisation = 18;
+  if (!targetCity) score_breakdown.localisation = weightedPoints(18 / 25, weights.localisation);
   else if (city.includes(targetCity)) {
-    score_breakdown.localisation = 25;
+    score_breakdown.localisation = weights.localisation;
     points_forts.push('Ville principale correspondante');
   } else {
-    score_breakdown.localisation = 10;
+    score_breakdown.localisation = weightedPoints(10 / 25, weights.localisation);
     points_faibles.push('Localisation à vérifier');
   }
 
   const price = Number(annonce.price || 0);
   const tolerance = options.searchMode === 'opportunity' ? 1.1 : options.searchMode === 'strict' ? 1 : 1.05;
   if (!alert.prix_max || price <= Number(alert.prix_max) * tolerance) {
-    score_breakdown.budget = alert.prix_max && price > Number(alert.prix_max) ? 16 : 20;
+    score_breakdown.budget = alert.prix_max && price > Number(alert.prix_max)
+      ? weightedPoints(16 / 20, weights.budget)
+      : weights.budget;
     points_forts.push('Budget compatible');
   } else {
-    score_breakdown.budget = 4;
+    score_breakdown.budget = weightedPoints(4 / 20, weights.budget);
     points_faibles.push('Budget hors cible');
   }
 
-  if (!alert.type_de_bien) score_breakdown.type = 10;
+  if (!alert.type_de_bien) score_breakdown.type = weightedPoints(10 / 15, weights.type);
   else if (normalize(annonce.type_de_bien).includes(normalize(alert.type_de_bien))) {
-    score_breakdown.type = 15;
+    score_breakdown.type = weights.type;
     points_forts.push('Type de bien exact');
   } else {
     points_faibles.push('Type de bien différent');
@@ -103,26 +126,26 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
     !alert.rooms_min || Number(annonce.rooms || 0) >= Number(alert.rooms_min),
     !alert.bedrooms_min || Number(annonce.bedrooms || 0) >= Number(alert.bedrooms_min),
   ];
-  score_breakdown.surface = Math.round((checks.filter(Boolean).length / checks.length) * 15);
-  if (score_breakdown.surface >= 12) points_forts.push('Surface et pièces cohérentes');
+  score_breakdown.surface = weightedPoints(checks.filter(Boolean).length / checks.length, weights.surface);
+  if (score_breakdown.surface >= weightedPoints(12 / 15, weights.surface)) points_forts.push('Surface et pièces cohérentes');
   else points_faibles.push('Surface ou pièces en écart');
 
   const hasExterior = ['jardin', 'terrain', 'terrasse', 'balcon', 'cour', 'piscine'].some(keyword => text.includes(keyword));
   if (options.exterior === 'required' && !hasExterior) {
     points_faibles.push('Extérieur obligatoire non détecté');
   } else {
-    score_breakdown.exterieur = hasExterior ? 10 : 6;
+    score_breakdown.exterieur = hasExterior ? weights.exterieur : weightedPoints(6 / 10, weights.exterieur);
     if (hasExterior) points_forts.push('Extérieur détecté');
   }
 
   const forbiddenWorks = Array.isArray(options.forbiddenWorks) ? options.forbiddenWorks : [];
   const forbiddenFound = forbiddenWorks.some(work => text.includes(normalize(String(work))));
-  score_breakdown.etat = forbiddenFound ? 1 : 5;
+  score_breakdown.etat = forbiddenFound ? weightedPoints(1 / 5, weights.etat) : weights.etat;
   if (forbiddenFound) points_faibles.push('Travaux interdits mentionnés');
 
   const dpeAccepted = Array.isArray(options.dpeAccepted) ? options.dpeAccepted.map(String) : ['A', 'B', 'C', 'D', 'E'];
   if (!annonce.dpe || dpeAccepted.includes(String(annonce.dpe).toUpperCase())) {
-    score_breakdown.dpe = annonce.dpe ? 5 : 3;
+    score_breakdown.dpe = annonce.dpe ? weights.dpe : weightedPoints(3 / 5, weights.dpe);
     if (annonce.dpe) points_forts.push('DPE compatible');
   } else {
     points_faibles.push('DPE hors cible');
@@ -137,9 +160,10 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
       points_forts.push(`Mot-clé détecté: ${keyword.value}`);
     }
   });
-  score_breakdown.motsCles = Math.min(5, keywordScore);
+  score_breakdown.motsCles = weightedPoints(Math.min(5, keywordScore) / 5, weights.motsCles);
 
-  const score_pertinence = Object.values(score_breakdown).reduce((sum, value) => sum + value, 0);
+  const rawScore = Object.values(score_breakdown).reduce((sum, value) => sum + value, 0);
+  const score_pertinence = Math.max(0, Math.min(100, Math.round((rawScore / totalWeight) * 100)));
   const resume = score_pertinence >= 75
     ? 'Cette annonce correspond fortement à la recherche et mérite une action rapide.'
     : score_pertinence >= 60

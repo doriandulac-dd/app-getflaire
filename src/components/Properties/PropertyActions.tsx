@@ -360,10 +360,16 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
 
   return (
     <>
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h3 className="font-semibold text-secondary-900 mb-4">Actions</h3>
+      <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">Qualification</p>
+            <h3 className="mt-1 font-semibold text-secondary-900">Actions</h3>
+          </div>
+          {loading && <span className="h-2 w-2 rounded-full bg-primary-500" />}
+        </div>
         
-        <div className="space-y-3 mb-6">
+        <div className="grid grid-cols-2 gap-2">
           {actionButtons.map(({ key, icon: Icon, label, color }) => {
             const isActive = status[key];
             
@@ -373,16 +379,16 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
                 onClick={() => handleToggle(key)}
                 disabled={loading}
                 className={`
-                  w-full flex items-center space-x-3 p-3 rounded-lg border transition-all
+                  flex min-h-[76px] flex-col items-start justify-between rounded-xl border p-3 text-left transition-all
                   ${isActive ? color : 'text-gray-500 bg-gray-50 border-gray-200 hover:bg-gray-100'}
                   ${loading ? 'opacity-50 cursor-not-allowed' : ''}
                 `}
               >
-                <Icon className="h-5 w-5" />
-                <span className="font-medium">{label}</span>
-                {isActive && (
-                  <div className="ml-auto h-2 w-2 rounded-full bg-current"></div>
-                )}
+                <span className="flex w-full items-center justify-between">
+                  <Icon className="h-5 w-5" />
+                  {isActive && <span className="h-2 w-2 rounded-full bg-current" />}
+                </span>
+                <span className="text-sm font-semibold">{label}</span>
               </button>
             );
           })}
@@ -390,7 +396,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
 
         {/* Status Details */}
         {(status.called || status.to_call || status.rdv) && (
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg space-y-2">
+          <div className="mt-4 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
             {status.called && status.call_date && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Appelé le :</span>
@@ -419,8 +425,8 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         )}
 
         {/* Notes */}
-        <div className="space-y-3">
-          <label className="block text-sm font-medium text-secondary-700">
+        <div className="mt-5 space-y-3 border-t border-gray-100 pt-4">
+          <label className="block text-sm font-semibold text-secondary-800">
             Notes
           </label>
           <textarea
@@ -429,22 +435,22 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
             onBlur={() => updateStatus(status, comment)}
             placeholder="Ajouter un commentaire..."
             rows={3}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500 resize-none"
+            className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-400 focus:ring-primary-500"
           />
         </div>
       </div>
 
       {/* Reminder Modal */}
       {showReminderModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-secondary-900">
                 Programmer un rappel
               </h3>
               <button
                 onClick={() => setShowReminderModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-md"
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -459,8 +465,8 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
                   type="date"
                   value={reminderDate}
                   onChange={(e) => setReminderDate(e.target.value)}
-                  min={new Date().toISOString().split('T')[2]}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 focus:border-primary-400 focus:ring-primary-500"
                 />
               </div>
 
@@ -472,7 +478,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
                   type="time"
                   value={reminderTime}
                   onChange={(e) => setReminderTime(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 focus:border-primary-400 focus:ring-primary-500"
                 />
               </div>
             </div>
@@ -480,13 +486,13 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
             <div className="flex space-x-3 mt-6">
               <button
                 onClick={() => setShowReminderModal(false)}
-                className="flex-1 px-4 py-2 text-secondary-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-secondary-700 transition-colors hover:bg-gray-200"
               >
                 Annuler
               </button>
               <button
                 onClick={handleReminderSubmit}
-                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+                className="flex-1 rounded-xl bg-primary-600 px-4 py-2 text-white transition-colors hover:bg-primary-700"
               >
                 Programmer
               </button>
@@ -496,15 +502,15 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
       )}
       {/* RDV Modal */}
       {showRdvModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-secondary-900">
                 Programmer un RDV
               </h3>
               <button
                 onClick={() => setShowRdvModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 rounded-md"
+                className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -520,7 +526,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
                   value={rdvDate}
                   onChange={(e) => setRdvDate(e.target.value)}
                   min={new Date().toISOString().split('T')[0]}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 focus:border-primary-400 focus:ring-primary-500"
                 />
               </div>
 
@@ -532,7 +538,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
                   type="time"
                   value={rdvTime}
                   onChange={(e) => setRdvTime(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                  className="w-full rounded-xl border border-gray-200 px-3 py-2 focus:border-primary-400 focus:ring-primary-500"
                 />
               </div>
             </div>
@@ -540,13 +546,13 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
             <div className="flex space-x-3 mt-6">
               <button
                 onClick={() => setShowRdvModal(false)}
-                className="flex-1 px-4 py-2 text-secondary-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                className="flex-1 rounded-xl bg-gray-100 px-4 py-2 text-secondary-700 transition-colors hover:bg-gray-200"
               >
                 Annuler
               </button>
               <button
                 onClick={handleRdvSubmit}
-                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+                className="flex-1 rounded-xl bg-primary-600 px-4 py-2 text-white transition-colors hover:bg-primary-700"
               >
                 Programmer
               </button>

@@ -11,8 +11,20 @@ import {
   SmartAlert,
   SmartAlertCriteria,
   SmartAlertFormData,
+  ScoreWeights,
   WeightedKeyword,
 } from '../types/smartAlerts';
+
+export const defaultScoreWeights: ScoreWeights = {
+  localisation: 25,
+  budget: 20,
+  type: 15,
+  surface: 15,
+  exterieur: 10,
+  etat: 5,
+  dpe: 5,
+  motsCles: 5,
+};
 
 export const defaultSmartAlertCriteria: SmartAlertCriteria = {
   acceptedCities: [],
@@ -36,6 +48,7 @@ export const defaultSmartAlertCriteria: SmartAlertCriteria = {
   negativeKeywords: [],
   sellerType: 'all',
   searchMode: 'balanced',
+  scoreWeights: defaultScoreWeights,
   investor: {
     enabled: false,
     potential: [],
@@ -57,6 +70,14 @@ const keywordWeight = (importance: WeightedKeyword['importance']) => {
   if (importance === 'medium') return 0.6;
   return 0.35;
 };
+
+const resolveScoreWeights = (weights?: Partial<ScoreWeights>): ScoreWeights => ({
+  ...defaultScoreWeights,
+  ...(weights || {}),
+});
+
+const weightedPoints = (ratio: number, maxPoints: number) =>
+  Math.max(0, Math.min(maxPoints, Math.round(ratio * maxPoints)));
 
 export const getSmartAlertBadge = (score: number) => {
   if (score >= 90) return { label: 'Match excellent', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
@@ -118,6 +139,8 @@ export const scoreAnnonceForAlert = (
   annonce: Annonce
 ) => {
   const criteria = { ...defaultSmartAlertCriteria, ...alert.options_avancees };
+  const weights = resolveScoreWeights(criteria.scoreWeights);
+  const totalWeight = Math.max(1, Object.values(weights).reduce((sum, value) => sum + value, 0));
   const text = normalizeText(`${annonce.title} ${annonce.description} ${annonce.city} ${annonce.type_de_bien} ${annonce.dpe || ''}`);
   const pointsForts: string[] = [];
   const pointsFaibles: string[] = [];
@@ -140,38 +163,40 @@ export const scoreAnnonceForAlert = (
   if (excludedCities.some(excluded => city.includes(excluded))) {
     pointsFaibles.push('Commune exclue dans la recherche');
   } else if (!mainCity && acceptedCities.length === 0) {
-    breakdown.localisation = 18;
+    breakdown.localisation = weightedPoints(18 / 25, weights.localisation);
     pointsForts.push('Localisation non restrictive');
   } else if (mainCity && city.includes(mainCity)) {
-    breakdown.localisation = 25;
+    breakdown.localisation = weights.localisation;
     pointsForts.push('Ville principale correspondante');
   } else if (acceptedCities.some(accepted => city.includes(accepted))) {
-    breakdown.localisation = 22;
+    breakdown.localisation = weightedPoints(22 / 25, weights.localisation);
     pointsForts.push('Commune acceptée');
   } else {
-    breakdown.localisation = criteria.locationImportance === 'required' ? 2 : 10;
+    breakdown.localisation = weightedPoints((criteria.locationImportance === 'required' ? 2 : 10) / 25, weights.localisation);
     pointsFaibles.push('Localisation à vérifier');
   }
 
   const tolerance = criteria.searchMode === 'strict' ? 0 : criteria.searchMode === 'opportunity' ? 0.1 : 0.05;
   const maxPrice = alert.prix_max ? alert.prix_max * (1 + tolerance) : undefined;
   if (!alert.prix_max && !alert.prix_min) {
-    breakdown.budget = 14;
+    breakdown.budget = weightedPoints(14 / 20, weights.budget);
   } else if ((alert.prix_min === undefined || annonce.price >= alert.prix_min) && (maxPrice === undefined || annonce.price <= maxPrice)) {
-    breakdown.budget = annonce.price <= (alert.prix_max || Infinity) ? 20 : 16;
+    breakdown.budget = annonce.price <= (alert.prix_max || Infinity)
+      ? weights.budget
+      : weightedPoints(16 / 20, weights.budget);
     pointsForts.push(annonce.price <= (alert.prix_max || Infinity) ? 'Budget respecté' : 'Prix dans la tolérance');
   } else {
-    breakdown.budget = 4;
+    breakdown.budget = weightedPoints(4 / 20, weights.budget);
     pointsFaibles.push('Budget hors cible');
   }
 
   if (!alert.type_de_bien) {
-    breakdown.type = 10;
+    breakdown.type = weightedPoints(10 / 15, weights.type);
   } else if (normalizeText(annonce.type_de_bien).includes(normalizeText(alert.type_de_bien))) {
-    breakdown.type = 15;
+    breakdown.type = weights.type;
     pointsForts.push('Type de bien exact');
   } else if (criteria.secondaryTypes.some(type => normalizeText(annonce.type_de_bien).includes(normalizeText(type)))) {
-    breakdown.type = 9;
+    breakdown.type = weightedPoints(9 / 15, weights.type);
     pointsForts.push('Type de bien accepté secondairement');
   } else {
     pointsFaibles.push('Type de bien différent');
@@ -181,33 +206,33 @@ export const scoreAnnonceForAlert = (
   const surfaceMaxOk = alert.surface_max === undefined || annonce.size <= alert.surface_max;
   const roomsOk = alert.rooms_min === undefined || annonce.rooms >= alert.rooms_min;
   const bedroomsOk = alert.bedrooms_min === undefined || annonce.bedrooms >= alert.bedrooms_min;
-  breakdown.surface = Math.round((Number(surfaceOk) + Number(surfaceMaxOk) + Number(roomsOk) + Number(bedroomsOk)) / 4 * 15);
-  if (breakdown.surface >= 12) pointsForts.push('Surface et pièces cohérentes');
+  breakdown.surface = weightedPoints((Number(surfaceOk) + Number(surfaceMaxOk) + Number(roomsOk) + Number(bedroomsOk)) / 4, weights.surface);
+  if (breakdown.surface >= weightedPoints(12 / 15, weights.surface)) pointsForts.push('Surface et pièces cohérentes');
   else pointsFaibles.push('Surface ou pièces en écart');
 
   const hasExterior = ['jardin', 'terrain', 'terrasse', 'balcon', 'cour', 'piscine'].some(k => text.includes(k));
   if (criteria.exterior === 'any') {
-    breakdown.exterieur = 6;
+    breakdown.exterieur = weightedPoints(6 / 10, weights.exterieur);
   } else if (hasExterior && criteria.exterior !== 'not_wanted') {
-    breakdown.exterieur = 10;
+    breakdown.exterieur = weights.exterieur;
     pointsForts.push('Extérieur détecté');
   } else if (!hasExterior && criteria.exterior === 'required') {
     pointsFaibles.push('Extérieur obligatoire non détecté');
   } else {
-    breakdown.exterieur = 4;
+    breakdown.exterieur = weightedPoints(4 / 10, weights.exterieur);
   }
 
   const forbiddenFound = criteria.forbiddenWorks.some(work => text.includes(normalizeText(work)));
   if (forbiddenFound) {
-    breakdown.etat = 1;
+    breakdown.etat = weightedPoints(1 / 5, weights.etat);
     pointsFaibles.push('Travaux interdits mentionnés');
   } else {
-    breakdown.etat = criteria.condition === 'any' ? 4 : 5;
+    breakdown.etat = criteria.condition === 'any' ? weightedPoints(4 / 5, weights.etat) : weights.etat;
     pointsForts.push('Aucun signal bloquant sur les travaux');
   }
 
   if (!annonce.dpe || criteria.dpeAccepted.includes(annonce.dpe.toUpperCase())) {
-    breakdown.dpe = annonce.dpe ? 5 : 3;
+    breakdown.dpe = annonce.dpe ? weights.dpe : weightedPoints(3 / 5, weights.dpe);
     if (annonce.dpe) pointsForts.push('DPE compatible');
   } else {
     pointsFaibles.push('DPE hors cible');
@@ -228,9 +253,10 @@ export const scoreAnnonceForAlert = (
       pointsFaibles.push(`Mot-clé exclu détecté: ${keyword.value}`);
     }
   });
-  breakdown.motsCles = Math.max(0, Math.min(5, Math.round(keywordScore)));
+  breakdown.motsCles = weightedPoints(Math.max(0, Math.min(5, keywordScore)) / 5, weights.motsCles);
 
-  const score = Math.max(0, Math.min(100, Object.values(breakdown).reduce((sum, value) => sum + value, 0)));
+  const rawScore = Object.values(breakdown).reduce((sum, value) => sum + value, 0);
+  const score = Math.max(0, Math.min(100, Math.round((rawScore / totalWeight) * 100)));
   const resume = score >= 75
     ? 'Cette annonce correspond fortement à la recherche et mérite une action rapide.'
     : score >= 60
@@ -250,7 +276,11 @@ export const scoreAnnonceForAlert = (
 
 const mapAlertRow = (row: any): SmartAlert => ({
   ...row,
-  options_avancees: { ...defaultSmartAlertCriteria, ...(row.options_avancees || {}) },
+  options_avancees: {
+    ...defaultSmartAlertCriteria,
+    ...(row.options_avancees || {}),
+    scoreWeights: resolveScoreWeights(row.options_avancees?.scoreWeights),
+  },
   client: row.client || null,
 });
 

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useEffect } from 'react';
-import { Filter, X, Search } from 'lucide-react';
+import { ChevronDown, Filter, Search, SlidersHorizontal, X } from 'lucide-react';
 import { PropertyFilters as PropertyFiltersType } from '../../types';
 import { supabase } from '../../lib/supabase';
 
@@ -10,25 +10,32 @@ interface PropertyFiltersProps {
   onClearFilters: () => void;
 }
 
+const propertyTypes = [
+  { value: 'Appartement', label: 'Appartement' },
+  { value: 'Maison', label: 'Maison' },
+  { value: 'Terrain', label: 'Terrain' },
+  { value: 'Commercial', label: 'Commercial' },
+  { value: 'Autre', label: 'Autre' },
+];
+
+const statusOptions = [
+  { value: 'favorite', label: 'Favoris', accent: 'text-red-700 bg-red-50 border-red-100' },
+  { value: 'to_call', label: 'A rappeler', accent: 'text-blue-700 bg-blue-50 border-blue-100' },
+  { value: 'called', label: 'Appeles', accent: 'text-green-700 bg-green-50 border-green-100' },
+  { value: 'hidden', label: 'Masques', accent: 'text-slate-700 bg-slate-100 border-slate-200' },
+];
+
 const PropertyFilters: React.FC<PropertyFiltersProps> = ({
   filters,
   onFiltersChange,
   onClearFilters,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [cityInput, setCityInput] = useState('');
   const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
-  const propertyTypes = [
-    { value: 'Appartement', label: 'Appartement' },
-    { value: 'Maison', label: 'Maison' },
-    { value: 'Terrain', label: 'Terrain' },
-    { value: 'Commercial', label: 'Commercial' },
-    { value: 'Autre', label: 'Autre' },
-  ];
-
-  // Fetch city suggestions based on input
   useEffect(() => {
     const fetchCitySuggestions = async () => {
       if (cityInput.length < 2) {
@@ -46,9 +53,8 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
 
         if (error) throw error;
 
-        // Get unique cities and filter out already selected ones
-        const uniqueCities = [...new Set(data?.map(item => item.city) || [])]
-          .filter(city => city && !((filters.cities || []).includes(city)))
+        const uniqueCities = [...new Set(data?.map((item) => item.city) || [])]
+          .filter((city) => city && !((filters.cities || []).includes(city)))
           .sort();
 
         setCitySuggestions(uniqueCities);
@@ -62,6 +68,17 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
     return () => clearTimeout(debounceTimer);
   }, [cityInput, filters.cities]);
 
+  const activeFiltersCount = useMemo(
+    () =>
+      Object.values(filters).filter(
+        (value) =>
+          value !== undefined &&
+          value !== '' &&
+          (Array.isArray(value) ? value.length > 0 : true)
+      ).length,
+    [filters]
+  );
+
   const handleFilterChange = (key: keyof PropertyFiltersType, value: any) => {
     onFiltersChange({
       ...filters,
@@ -69,13 +86,22 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
     });
   };
 
-  const handleArrayFilterChange = (key: keyof PropertyFiltersType, value: string, checked: boolean) => {
+  const handleArrayFilterChange = (
+    key: keyof PropertyFiltersType,
+    value: string,
+    checked: boolean
+  ) => {
     const currentValues = (filters[key] as string[]) || [];
     const newValues = checked
       ? [...currentValues, value]
-      : currentValues.filter(v => v !== value);
-    
+      : currentValues.filter((v) => v !== value);
+
     handleFilterChange(key, newValues.length > 0 ? newValues : undefined);
+  };
+
+  const handleSingleStatusShortcut = (value: string) => {
+    const active = (filters.status || []).includes(value);
+    handleFilterChange('status', active ? undefined : [value]);
   };
 
   const handleCityAdd = (city: string) => {
@@ -84,11 +110,6 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
       setCityInput('');
       setShowSuggestions(false);
     }
-  };
-
-  const handleCityInputChange = (value: string) => {
-    setCityInput(value);
-    setShowSuggestions(value.length >= 2);
   };
 
   const handleCityInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -105,286 +126,328 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
     }
   };
 
-  const activeFiltersCount = Object.values(filters).filter(value => 
-    value !== undefined && value !== '' && 
-    (Array.isArray(value) ? value.length > 0 : true)
-  ).length;
-
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-      {/* Mobile toggle */}
-      <div className="flex items-center justify-between lg:hidden">
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center space-x-2 text-secondary-700 font-medium"
-        >
-          <Filter className="h-5 w-5" />
-          <span>Filtres</span>
-          {activeFiltersCount > 0 && (
-            <span className="bg-primary-500 text-white rounded-full px-2 py-1 text-xs">
-              {activeFiltersCount}
-            </span>
-          )}
-        </button>
-        
-        {activeFiltersCount > 0 && (
-          <button
-            onClick={onClearFilters}
-            className="text-sm text-secondary-500 hover:text-secondary-700"
-          >
-            Effacer
-          </button>
-        )}
-      </div>
-
-      {/* Filters content */}
-      <div className={`space-y-4 ${isOpen ? 'block' : 'hidden lg:block'} ${isOpen ? 'mt-4' : ''}`}>
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Rechercher"
-            value={filters.search || ''}
-            onChange={(e) => handleFilterChange('search', e.target.value || undefined)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
-          />
-        </div>
-
-        <div className="flex flex-row flex-nowrap gap-4 overflow-x-auto pb-2">
-          {/* Property types */}
+    <section className="surface-panel rounded-3xl p-4 shadow-sm sm:p-5" data-gsap-reveal>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-4">
           <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Type de bien
-            </label>
-            <div className="space-y-2">
-              {propertyTypes.map(type => (
-                <label key={type.value} className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={(filters.property_types || []).includes(type.value)}
-                    onChange={(e) => handleArrayFilterChange('property_types', type.value, e.target.checked)}
-                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  />
-                  <span className="ml-2 text-sm text-secondary-700">{type.label}</span>
-                </label>
-              ))}
-            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-700">
+              Filtres et qualification
+            </p>
+            <h3 className="mt-2 text-xl font-semibold text-secondary-900">Affinez votre pige</h3>
           </div>
 
-          {/* Cities */}
-          <div className="min-w-[200px]">
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Villes
-            </label>
-            <div className="space-y-2 relative">
+          <div className="flex items-center gap-2">
+            {activeFiltersCount > 0 && (
+              <span className="hidden rounded-full bg-primary-50 px-3 py-1 text-sm font-medium text-primary-700 sm:inline-flex">
+                {activeFiltersCount} actif{activeFiltersCount > 1 ? 's' : ''}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsMobileOpen((prev) => !prev)}
+              className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-secondary-700 shadow-sm lg:hidden"
+            >
+              <Filter className="h-4 w-4" />
+              Filtres
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <label className="block xl:col-span-2">
+            <span className="mb-2 block text-sm font-medium text-secondary-700">Recherche rapide</span>
+            <span className="relative block">
+              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-400" />
               <input
                 type="text"
-                placeholder="Ajouter une ville..."
-                value={cityInput}
-                onChange={(e) => handleCityInputChange(e.target.value)}
-                onKeyDown={handleCityInputKeyDown}
-                onFocus={() => cityInput.length >= 2 && setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
+                placeholder="Titre, description, ville..."
+                value={filters.search || ''}
+                onChange={(e) => handleFilterChange('search', e.target.value || undefined)}
+                className="h-12 w-full rounded-2xl border border-gray-200 bg-white pl-11 pr-4 text-sm shadow-sm focus:border-primary-400 focus:ring-primary-500"
               />
-              
-              {/* Suggestions dropdown */}
-              {showSuggestions && citySuggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-10 bg-white border border-gray-300 rounded-md shadow-lg max-h-40 overflow-y-auto">
-                  {citySuggestions.map((city, index) => (
-                    <button
-                      key={index}
-                      type="button"
-                      onClick={() => handleCityAdd(city)}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-primary-50 hover:text-primary-700 focus:bg-primary-50 focus:text-primary-700 focus:outline-none"
-                    >
-                      {city}
-                    </button>
-                  ))}
-                </div>
-              )}
-              
-              <div className="max-h-32 overflow-y-auto space-y-1">
-                {(filters.cities || []).map(city => (
-                  <div key={city} className="flex items-center justify-between bg-primary-50 px-2 py-1 rounded text-sm">
-                    <span className="text-primary-700">{city}</span>
-                    <button
-                      onClick={() => handleArrayFilterChange('cities', city, false)}
-                      className="text-primary-600 hover:text-primary-800 ml-2"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
+            </span>
+          </label>
+
+          <div className="relative">
+            <span className="mb-2 block text-sm font-medium text-secondary-700">Ville</span>
+            <input
+              type="text"
+              placeholder="Ajouter une ville"
+              value={cityInput}
+              onChange={(e) => {
+                setCityInput(e.target.value);
+                setShowSuggestions(e.target.value.length >= 2);
+              }}
+              onKeyDown={handleCityInputKeyDown}
+              onFocus={() => cityInput.length >= 2 && setShowSuggestions(true)}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              className="h-12 w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm shadow-sm focus:border-primary-400 focus:ring-primary-500"
+            />
+
+            {showSuggestions && citySuggestions.length > 0 && (
+              <div className="absolute top-full z-20 mt-2 w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+                {citySuggestions.map((city) => (
+                  <button
+                    key={city}
+                    type="button"
+                    onClick={() => handleCityAdd(city)}
+                    className="block w-full px-4 py-3 text-left text-sm text-secondary-700 hover:bg-primary-50 hover:text-primary-700"
+                  >
+                    {city}
+                  </button>
                 ))}
+              </div>
+            )}
+          </div>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-secondary-700">Type de bien</span>
+            <select
+              value={(filters.property_types || [])[0] || ''}
+              onChange={(e) =>
+                handleFilterChange('property_types', e.target.value ? [e.target.value] : undefined)
+              }
+              className="h-12 w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm shadow-sm focus:border-primary-400 focus:ring-primary-500"
+            >
+              <option value="">Tous les types</option>
+              {propertyTypes.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {!!(filters.cities || []).length && (
+          <div className="flex flex-wrap gap-2">
+            {(filters.cities || []).map((city) => (
+              <button
+                key={city}
+                type="button"
+                onClick={() => handleArrayFilterChange('cities', city, false)}
+                className="inline-flex items-center gap-2 rounded-full border border-primary-100 bg-primary-50 px-3 py-1.5 text-sm font-medium text-primary-700"
+              >
+                {city}
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className={`space-y-4 ${isMobileOpen ? 'block' : 'hidden lg:block'}`}>
+          <div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
+            <div className="rounded-3xl border border-gray-200 bg-white p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <SlidersHorizontal className="h-4 w-4 text-primary-600" />
+                <h4 className="text-sm font-semibold text-secondary-900">Statuts et priorites</h4>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {statusOptions.map((option) => {
+                  const active = (filters.status || []).includes(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleSingleStatusShortcut(option.value)}
+                      className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+                        active ? option.accent : 'border-gray-200 bg-white text-secondary-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => handleFilterChange('urgent_only', filters.urgent_only ? undefined : true)}
+                  className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+                    filters.urgent_only
+                      ? 'border-red-100 bg-red-50 text-red-700'
+                      : 'border-gray-200 bg-white text-secondary-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Urgentes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFilterChange('has_phone', filters.has_phone ? undefined : true)}
+                  className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+                    filters.has_phone
+                      ? 'border-primary-100 bg-primary-50 text-primary-700'
+                      : 'border-gray-200 bg-white text-secondary-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Avec numero
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleFilterChange('non_processed', filters.non_processed ? undefined : true)
+                  }
+                  className={`rounded-full border px-3 py-2 text-sm font-medium transition ${
+                    filters.non_processed
+                      ? 'border-secondary-200 bg-secondary-100 text-secondary-800'
+                      : 'border-gray-200 bg-white text-secondary-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Non traitees
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-gray-200 bg-white p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-secondary-900">Fourchettes rapides</h4>
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((prev) => !prev)}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-primary-700"
+                >
+                  Avances
+                  <ChevronDown className={`h-4 w-4 transition ${showAdvanced ? 'rotate-180' : ''}`} />
+                </button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-secondary-700">Prix min</span>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={filters.price_min || ''}
+                    onChange={(e) =>
+                      handleFilterChange('price_min', e.target.value ? Number(e.target.value) : undefined)
+                    }
+                    className="h-11 w-full rounded-2xl border border-gray-200 px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-secondary-700">Prix max</span>
+                  <input
+                    type="number"
+                    placeholder="1 000 000"
+                    value={filters.price_max || ''}
+                    onChange={(e) =>
+                      handleFilterChange('price_max', e.target.value ? Number(e.target.value) : undefined)
+                    }
+                    className="h-11 w-full rounded-2xl border border-gray-200 px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-secondary-700">Surface min</span>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={filters.surface_min || ''}
+                    onChange={(e) =>
+                      handleFilterChange('surface_min', e.target.value ? Number(e.target.value) : undefined)
+                    }
+                    className="h-11 w-full rounded-2xl border border-gray-200 px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-secondary-700">Surface max</span>
+                  <input
+                    type="number"
+                    placeholder="300"
+                    value={filters.surface_max || ''}
+                    onChange={(e) =>
+                      handleFilterChange('surface_max', e.target.value ? Number(e.target.value) : undefined)
+                    }
+                    className="h-11 w-full rounded-2xl border border-gray-200 px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
+                  />
+                </label>
               </div>
             </div>
           </div>
 
-          {/* Actions */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Actions
-            </label>
-            <div className="space-y-2">
-              <label className="flex items-center">
+          {showAdvanced && (
+            <div className="grid gap-4 rounded-3xl border border-gray-200 bg-slate-50/70 p-4 lg:grid-cols-4">
+              <div>
+                <p className="mb-3 text-sm font-semibold text-secondary-900">Types disponibles</p>
+                <div className="space-y-2">
+                  {propertyTypes.map((type) => (
+                    <label key={type.value} className="flex items-center gap-2 text-sm text-secondary-700">
+                      <input
+                        type="checkbox"
+                        checked={(filters.property_types || []).includes(type.value)}
+                        onChange={(e) =>
+                          handleArrayFilterChange('property_types', type.value, e.target.checked)
+                        }
+                        className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      />
+                      {type.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-3 text-sm font-semibold text-secondary-900">Visibilite</p>
+                <label className="flex items-center gap-2 text-sm text-secondary-700">
+                  <input
+                    type="checkbox"
+                    checked={filters.online_status === true}
+                    onChange={(e) => handleFilterChange('online_status', e.target.checked ? true : undefined)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  En ligne uniquement
+                </label>
+              </div>
+
+              <div>
+                <p className="mb-3 text-sm font-semibold text-secondary-900">Traitement</p>
+                <label className="flex items-center gap-2 text-sm text-secondary-700">
+                  <input
+                    type="checkbox"
+                    checked={filters.include_all_statuses || false}
+                    onChange={(e) =>
+                      handleFilterChange('include_all_statuses', e.target.checked || undefined)
+                    }
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  Inclure statuts complets
+                </label>
+              </div>
+
+              <div>
+                <p className="mb-3 text-sm font-semibold text-secondary-900">Pieces min</p>
                 <input
-                  type="checkbox"
-                  checked={(filters.status || []).includes('favorite')}
-                  onChange={(e) => handleArrayFilterChange('status', 'favorite', e.target.checked)}
-                  className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                  type="number"
+                  placeholder="2"
+                  value={filters.rooms_min || ''}
+                  onChange={(e) =>
+                    handleFilterChange('rooms_min', e.target.value ? Number(e.target.value) : undefined)
+                  }
+                  className="h-11 w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
                 />
-                <span className="ml-2 text-sm text-red-700 font-medium">Favoris</span>
-              </label>
-              
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={(filters.status || []).includes('to_call')}
-                  onChange={(e) => handleArrayFilterChange('status', 'to_call', e.target.checked)}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-blue-700 font-medium">À rappeler</span>
-              </label>
-              
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={(filters.status || []).includes('called')}
-                  onChange={(e) => handleArrayFilterChange('status', 'called', e.target.checked)}
-                  className="h-4 w-4 text-success-600 focus:ring-success-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-success-700 font-medium">Appelé</span>
-              </label>
-              
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={(filters.status || []).includes('hidden')}
-                  onChange={(e) => handleArrayFilterChange('status', 'hidden', e.target.checked)}
-                  className="h-4 w-4 text-gray-600 focus:ring-gray-500 border-gray-300 rounded"
-                />
-                <span className="ml-2 text-sm text-gray-700 font-medium">Masqué</span>
-              </label>
+              </div>
             </div>
-          </div>
-
-          {/* Prix */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Prix (€)
-            </label>
-            <div className="space-y-2">
-              <input
-                type="number"
-                placeholder="Min"
-                value={filters.price_min || ''}
-                onChange={(e) => handleFilterChange('price_min', e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-              <input
-                type="number"
-                placeholder="Max"
-                value={filters.price_max || ''}
-                onChange={(e) => handleFilterChange('price_max', e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
-          </div>
-
-          {/* Surface */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Surface (m²)
-            </label>
-            <div className="space-y-2">
-              <input
-                type="number"
-                placeholder="Min"
-                value={filters.surface_min || ''}
-                onChange={(e) => handleFilterChange('surface_min', e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-              <input
-                type="number"
-                placeholder="Max"
-                value={filters.surface_max || ''}
-                onChange={(e) => handleFilterChange('surface_max', e.target.value ? Number(e.target.value) : undefined)}
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-md text-sm focus:ring-primary-500 focus:border-primary-500"
-              />
-            </div>
-          </div>
-
-          {/* Urgence */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Urgence
-            </label>
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={filters.urgent_only || false}
-                onChange={(e) => handleFilterChange('urgent_only', e.target.checked || undefined)}
-                className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-red-700 font-medium">Annonces urgentes uniquement</span>
-            </label>
-          </div>
-
-          {/* Annonces avec numéro */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Annonces avec numéro
-            </label>
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={filters.has_phone || false}
-                onChange={(e) => handleFilterChange('has_phone', e.target.checked || undefined)}
-                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-secondary-700 font-medium">Avec numéro de téléphone</span>
-            </label>
-          </div>
-
-          {/* Annonces non-traitées */}
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-2">
-              Statut de traitement
-            </label>
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={filters.non_processed || false}
-                onChange={(e) => handleFilterChange('non_processed', e.target.checked || undefined)}
-                className="h-4 w-4 text-secondary-600 focus:ring-secondary-500 border-gray-300 rounded"
-              />
-              <span className="ml-2 text-sm text-secondary-700 font-medium">Annonces non-traitées uniquement</span>
-            </label>
-          </div>
-        </div>
-
-
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-          <div className="flex items-center space-x-4">
-            <span className="text-sm text-secondary-600">
-              {activeFiltersCount} filtre{activeFiltersCount > 1 ? 's' : ''} actif{activeFiltersCount > 1 ? 's' : ''}
-            </span>
-          </div>
-          
-          {activeFiltersCount > 0 && (
-            <button
-              onClick={onClearFilters}
-              className="flex items-center space-x-1 text-sm text-secondary-500 hover:text-secondary-700"
-            >
-              <X className="h-4 w-4" />
-              <span>Effacer les filtres</span>
-            </button>
           )}
+
+          <div className="flex flex-col gap-3 border-t border-gray-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm text-secondary-600">
+              {activeFiltersCount} filtre{activeFiltersCount > 1 ? 's' : ''} actif
+              {activeFiltersCount > 1 ? 's' : ''}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {activeFiltersCount > 0 && (
+                <button
+                  type="button"
+                  onClick={onClearFilters}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-secondary-600 hover:bg-gray-50"
+                >
+                  <X className="h-4 w-4" />
+                  Effacer les filtres
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 
