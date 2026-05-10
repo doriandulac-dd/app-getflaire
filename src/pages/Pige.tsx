@@ -27,7 +27,7 @@ const Pige: React.FC = () => {
   const itemsPerPage = appUser?.personalization_settings?.items_per_page || 20;
   const authorizedDepartments = appUser?.departements_autorises || [];
   const hasNoAuthorizedDepartments = Boolean(appUser) && authorizedDepartments.length === 0;
-  const { annonces, loading, error, hasMore, loadMore, refresh } = useAnnonces(filters, sort, itemsPerPage, {
+  const { annonces, loading, error, hasMore, totalCount, loadedCount, loadMore, refresh } = useAnnonces(filters, sort, itemsPerPage, {
     ownerType: 'Particulier',
     departments: authorizedDepartments,
     requireDepartments: true,
@@ -261,8 +261,13 @@ const Pige: React.FC = () => {
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <h2 className="text-2xl font-bold text-secondary-900">Pige immobiliere</h2>
               <span className="rounded-full bg-secondary-100 px-3 py-1 text-sm font-medium text-secondary-700">
-                {annonces.length} annonce{annonces.length > 1 ? 's' : ''}
+                {totalCount} annonce{totalCount > 1 ? 's' : ''}
               </span>
+              {loadedCount > 0 && loadedCount < totalCount && (
+                <span className="text-sm font-medium text-secondary-500">
+                  {loadedCount} affichee{loadedCount > 1 ? 's' : ''} sur {totalCount}
+                </span>
+              )}
               {activeFiltersCount > 0 && (
                 <span className="rounded-full bg-primary-50 px-3 py-1 text-sm font-medium text-primary-700">
                   {activeFiltersCount} filtre{activeFiltersCount > 1 ? 's' : ''} actif

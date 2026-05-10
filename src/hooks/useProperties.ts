@@ -223,6 +223,7 @@ export const useAnnonces = (
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
   const [page, setPage] = useState(1);
   const { appUser } = useAuth();
   const activityScope = useActivityScope();
@@ -236,96 +237,22 @@ export const useAnnonces = (
       setError(null);
       if (reset) {
         setPage(1);
-        setHasMore(true);
+        setAnnonces([]);
+        setTotalCount(0);
+        setHasMore(false);
       }
 
       const scopedDepartments = normalizeDepartments(options.departments);
       if (options.requireDepartments && scopedDepartments.length === 0) {
         setAnnonces([]);
+        setTotalCount(0);
         setHasMore(false);
         setPage(1);
         return;
       }
 
-      let query = supabase
-        .from('annonces_with_relative_date')
-        .select('*', { count: 'exact' });
-
-      // Apply filters
-      if (filters.search) {
-        query = query.or(`title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,city.ilike.%${filters.search}%`);
-      }
-
-      if (filters.property_types?.length && !filters.property_types.includes('Autre')) {
-        const typeTerms = filters.property_types.flatMap(getPropertyTypeAliases);
-        query = query.or(typeTerms.map(term => `type_de_bien.ilike.%${term}%`).join(','));
-      }
-
-      if (filters.cities?.length) {
-        query = query.or(filters.cities.map(city => `city.ilike.%${city}%`).join(','));
-      }
-
-
-      if (filters.price_min !== undefined) {
-        query = query.gte('price', filters.price_min);
-      }
-
-      if (filters.price_max !== undefined) {
-        query = query.lte('price', filters.price_max);
-      }
-
-      if (filters.surface_min !== undefined) {
-        query = query.gte('size', filters.surface_min);
-      }
-
-      if (filters.surface_max !== undefined) {
-        query = query.lte('size', filters.surface_max);
-      }
-
-      if (filters.rooms_min !== undefined) {
-        query = query.gte('rooms', filters.rooms_min);
-      }
-
-      if (filters.urgent_only) {
-        query = query.or('urgence.eq.true,urgence_detectee.eq.true');
-      }
-
-      if (filters.has_phone) {
-        query = query.not('phone', 'is', null).neq('phone', '');
-      }
-
-      if (filters.online_status !== undefined) {
-        query = query.eq('en_ligne', filters.online_status);
-      }
-
-      if (options.ownerType) {
-        query = query.eq('owner_type', options.ownerType);
-      } else if (filters.owner_type) {
-        query = query.eq('owner_type', filters.owner_type);
-      }
-
-      if (scopedDepartments.length > 0) {
-        const departmentFilters = scopedDepartments.flatMap(department => {
-          const postalPrefix = department === '2A' || department === '2B' ? '20' : department;
-          return [
-            `departement.eq.${department}`,
-            `postal_code.like.${postalPrefix}%`,
-            ...getDepartmentLabels(department).map(label => `departement.ilike.%${label}%`),
-          ];
-        });
-        query = query.or(departmentFilters.join(','));
-      }
-
-      if (filters.url_search) {
-        query = query.eq('url', filters.url_search);
-      }
-
-      // Filter only non-deleted and online listings (unless include_all_statuses is true)
-      if (!filters.include_all_statuses) {
-        query = query.eq('supprimee', false);
-        query = query.neq('en_ligne', false);
-      }
-
+      let matchingStatusIds: string[] | null = null;
+      let excludedProcessedIds: string[] = [];
       if (appUser && activityScope.userIds.length > 0 && !filters.include_all_statuses && (filters.status?.length || filters.non_processed)) {
         const [allFavoritesResult, allSuiviResult] = await Promise.all([
           withTimeout(
@@ -364,32 +291,138 @@ export const useAnnonces = (
             }
           });
 
-          const ids = Array.from(matchingIds);
-          query = query.in('id', ids.length ? ids : ['00000000-0000-0000-0000-000000000000']);
+          matchingStatusIds = Array.from(matchingIds);
         }
 
         if (filters.non_processed) {
-          const processedIds = Array.from(new Set([...favoriteIds, ...suiviIds]));
-          if (processedIds.length) {
-            query = query.not('id', 'in', `(${processedIds.join(',')})`);
-          }
+          excludedProcessedIds = Array.from(new Set([...favoriteIds, ...suiviIds]));
         }
       }
+
+      const applyQueryFilters = <T,>(baseQuery: T): T => {
+        let scopedQuery: any = baseQuery;
+
+        if (filters.search) {
+          scopedQuery = scopedQuery.or(`title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,city.ilike.%${filters.search}%`);
+        }
+
+        if (filters.property_types?.length && !filters.property_types.includes('Autre')) {
+          const typeTerms = filters.property_types.flatMap(getPropertyTypeAliases);
+          const typeFilters = typeTerms.flatMap(term => [
+            `type_de_bien.ilike.%${term}%`,
+            `title.ilike.%${term}%`,
+          ]);
+          scopedQuery = scopedQuery.or(typeFilters.join(','));
+        }
+
+        if (filters.cities?.length) {
+          scopedQuery = scopedQuery.or(filters.cities.map(city => `city.ilike.%${city}%`).join(','));
+        }
+
+        if (filters.price_min !== undefined) {
+          scopedQuery = scopedQuery.gte('price', filters.price_min);
+        }
+
+        if (filters.price_max !== undefined) {
+          scopedQuery = scopedQuery.lte('price', filters.price_max);
+        }
+
+        if (filters.surface_min !== undefined) {
+          scopedQuery = scopedQuery.gte('size', filters.surface_min);
+        }
+
+        if (filters.surface_max !== undefined) {
+          scopedQuery = scopedQuery.lte('size', filters.surface_max);
+        }
+
+        if (filters.rooms_min !== undefined) {
+          scopedQuery = scopedQuery.gte('rooms', filters.rooms_min);
+        }
+
+        if (filters.urgent_only) {
+          scopedQuery = scopedQuery.or('urgence.eq.true,urgence_detectee.eq.true');
+        }
+
+        if (filters.has_phone) {
+          scopedQuery = scopedQuery.not('phone', 'is', null).neq('phone', '');
+        }
+
+        if (filters.online_status !== undefined) {
+          scopedQuery = scopedQuery.eq('en_ligne', filters.online_status);
+        }
+
+        if (options.ownerType) {
+          scopedQuery = scopedQuery.eq('owner_type', options.ownerType);
+        } else if (filters.owner_type) {
+          scopedQuery = scopedQuery.eq('owner_type', filters.owner_type);
+        }
+
+        if (scopedDepartments.length > 0) {
+          const departmentFilters = scopedDepartments.flatMap(department => {
+            const postalPrefix = department === '2A' || department === '2B' ? '20' : department;
+            return [
+              `departement.eq.${department}`,
+              `postal_code.like.${postalPrefix}%`,
+              ...getDepartmentLabels(department).map(label => `departement.ilike.%${label}%`),
+            ];
+          });
+          scopedQuery = scopedQuery.or(departmentFilters.join(','));
+        }
+
+        if (filters.url_search) {
+          scopedQuery = scopedQuery.eq('url', filters.url_search);
+        }
+
+        // Filter only non-deleted and online listings (unless include_all_statuses is true)
+        if (!filters.include_all_statuses) {
+          scopedQuery = scopedQuery.eq('supprimee', false);
+          scopedQuery = scopedQuery.neq('en_ligne', false);
+        }
+
+        if (matchingStatusIds) {
+          scopedQuery = scopedQuery.in(
+            'id',
+            matchingStatusIds.length ? matchingStatusIds : ['00000000-0000-0000-0000-000000000000']
+          );
+        }
+
+        if (excludedProcessedIds.length) {
+          scopedQuery = scopedQuery.not('id', 'in', `(${excludedProcessedIds.join(',')})`);
+        }
+
+        return scopedQuery as T;
+      };
       
+      let dataQuery = applyQueryFilters(
+        supabase
+          .from('annonces_with_relative_date')
+          .select('*')
+      );
+      const countQuery = applyQueryFilters(
+        supabase
+          .from('annonces_with_relative_date')
+          .select('id', { count: 'exact', head: true })
+      );
+
       // Apply sorting
-      query = query.order(sort.field, { ascending: sort.direction === 'asc' });
+      dataQuery = dataQuery.order(sort.field, { ascending: sort.direction === 'asc' });
 
       // Apply pagination
       const from = reset ? 0 : (page - 1) * limit;
       const to = from + limit - 1;
-      query = query.range(from, to);
+      dataQuery = dataQuery.range(from, to);
 
-      const { data, error: queryError, count } = await withTimeout(query, 'chargement des annonces');
+      const [dataResult, countResult] = await Promise.all([
+        withTimeout(dataQuery, 'chargement des annonces'),
+        withTimeout(countQuery, 'comptage des annonces'),
+      ]);
 
-      if (queryError) throw queryError;
+      if (dataResult.error) throw dataResult.error;
+      if (countResult.error) throw countResult.error;
       if (requestId !== requestIdRef.current) return;
 
-      let newAnnonces = data || [];
+      const nextTotalCount = countResult.count ?? 0;
+      let newAnnonces = dataResult.data || [];
 
       if (filters.property_types?.length) {
         newAnnonces = newAnnonces.filter(annonce =>
@@ -521,6 +554,8 @@ export const useAnnonces = (
 
       if (reset) {
         setAnnonces(newAnnonces);
+        setTotalCount(nextTotalCount);
+        setHasMore(newAnnonces.length < nextTotalCount);
         setPage(2);
       } else {
         // When adding more annonces, ensure no duplicates with existing ones
@@ -529,18 +564,13 @@ export const useAnnonces = (
           const newUniqueAnnonces = newAnnonces.filter(a => !existingIds.has(a.id));
 
           const finalAnnonces = [...prev, ...newUniqueAnnonces];
-          
-          // Update hasMore based on total unique annonces vs total count
-          setHasMore(finalAnnonces.length < (count || 0));
+
+          setTotalCount(nextTotalCount);
+          setHasMore(finalAnnonces.length < nextTotalCount);
           
           return finalAnnonces;
         });
         setPage(prev => prev + 1);
-      }
-
-      // For reset case, set hasMore based on current annonces vs total count
-      if (reset) {
-        setHasMore(newAnnonces.length < (count || 0));
       }
     } catch (err: any) {
       if (requestId !== requestIdRef.current) return;
@@ -582,6 +612,8 @@ export const useAnnonces = (
     loading,
     error,
     hasMore,
+    totalCount,
+    loadedCount: annonces.length,
     loadMore,
     refresh,
   };
