@@ -375,8 +375,8 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
           </div>
         </div>
 
-        <div className={`flex flex-1 flex-col ${isList ? 'p-5 lg:p-6' : 'p-5'}`}>
-          <div className={`flex gap-4 ${isList ? 'flex-col xl:flex-row xl:items-start xl:justify-between' : 'items-start justify-between'}`}>
+        <div className={`flex flex-1 flex-col ${isList ? 'p-5 lg:p-6' : 'p-4'}`}>
+          <div className={`flex gap-4 ${isList ? 'flex-col xl:flex-row xl:items-start xl:justify-between' : 'flex-col'}`}>
             <div className="min-w-0 flex-1">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 {annonce.type_de_bien && (
@@ -402,14 +402,21 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                 </span>
               </div>
 
-              <h3 className={`font-semibold text-secondary-900 ${isList ? 'text-xl leading-7' : 'text-base leading-6'}`} title={annonce.title}>
+              {!isList && (
+                <div className="mb-3 flex items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                  <p className="min-w-0 flex-1 text-xs font-medium text-secondary-400">{annonce.published_relative}</p>
+                  <p className="flex-shrink-0 text-right text-xl font-bold text-primary-600">{formatPrice(annonce.price)}</p>
+                </div>
+              )}
+
+              <h3 className={`font-semibold text-secondary-900 ${isList ? 'text-xl leading-7' : 'line-clamp-3 text-base leading-6'}`} title={annonce.title}>
                 {annonce.title}
               </h3>
 
-              <div className="mt-3 flex flex-wrap items-center gap-4 text-sm text-secondary-600">
-                <div className="flex items-center gap-1.5">
+              <div className={`mt-3 text-sm text-secondary-600 ${isList ? 'flex flex-wrap items-center gap-4' : 'grid grid-cols-2 gap-2'}`}>
+                <div className={`flex items-center gap-1.5 ${isList ? '' : 'col-span-2 min-w-0'}`}>
                   <MapPin className="h-4 w-4 text-secondary-400" />
-                  <span>
+                  <span className={isList ? '' : 'truncate'}>
                     {annonce.city} ({annonce.postal_code})
                   </span>
                 </div>
@@ -432,14 +439,16 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
               </div>
             </div>
 
-            <div className={`${isList ? 'xl:min-w-[168px] xl:text-right' : 'text-right'} flex-shrink-0`}>
-              <p className="text-2xl font-bold text-primary-600">{formatPrice(annonce.price)}</p>
-              <p className="mt-2 text-xs font-medium text-secondary-400">{annonce.published_relative}</p>
-            </div>
+            {isList && (
+              <div className="flex-shrink-0 xl:min-w-[168px] xl:text-right">
+                <p className="text-2xl font-bold text-primary-600">{formatPrice(annonce.price)}</p>
+                <p className="mt-2 text-xs font-medium text-secondary-400">{annonce.published_relative}</p>
+              </div>
+            )}
           </div>
 
-          <div className={`mt-5 ${isList ? 'grid gap-4 xl:grid-cols-[1fr_auto]' : ''}`}>
-            <div className="rounded-2xl border border-gray-100 bg-slate-50/80 px-4 py-3">
+          <div className={`mt-4 ${isList ? 'grid gap-4 xl:grid-cols-[1fr_auto]' : ''}`}>
+            <div className="rounded-2xl border border-gray-100 bg-slate-50/80 px-3 py-3">
               <div className="flex items-center justify-between gap-3 text-sm text-secondary-600">
                 <div className="flex min-w-0 items-center gap-2">
                   <Phone className="h-4 w-4 flex-shrink-0 text-secondary-400" />
@@ -459,7 +468,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
               )}
             </div>
 
-            <div className={`mt-4 flex items-center ${isList ? 'xl:mt-0 xl:justify-end' : 'justify-between'} gap-3`}>
+            <div className={`mt-4 flex ${isList ? 'items-center gap-3 xl:mt-0 xl:justify-end' : 'flex-col items-stretch gap-3'}`}>
               {showSurveillanceButton ? (
                 <button
                   onClick={handleAddToSurveillance}
@@ -474,7 +483,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                   {isUnderSurveillance ? 'Arreter surveillance' : 'Surveiller'}
                 </button>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div className={`flex flex-wrap gap-2 ${isList ? '' : 'justify-between'}`}>
                   {Object.entries(statusConfig).map(([statusKey, config]) => {
                     const Icon = config.icon;
                     const isActive = currentStatus[statusKey as keyof typeof currentStatus];
@@ -500,7 +509,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
 
               {!showSurveillanceButton && (
                 <button
-                  className="inline-flex items-center gap-2 rounded-2xl bg-secondary-900 px-4 py-3 text-xs font-semibold text-white transition hover:bg-secondary-800"
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl bg-secondary-900 px-4 py-3 text-xs font-semibold text-white transition hover:bg-secondary-800 ${isList ? '' : 'w-full'}`}
                   onClick={(e) => openDetails(e)}
                 >
                   Voir details
