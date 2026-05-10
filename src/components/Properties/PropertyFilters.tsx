@@ -70,8 +70,9 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
 
   const activeFiltersCount = useMemo(
     () =>
-      Object.values(filters).filter(
-        (value) =>
+      Object.entries(filters).filter(
+        ([key, value]) =>
+          key !== 'owner_type' &&
           value !== undefined &&
           value !== '' &&
           (Array.isArray(value) ? value.length > 0 : true)
@@ -218,6 +219,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
               ))}
             </select>
           </label>
+
         </div>
 
         {!!(filters.cities || []).length && (

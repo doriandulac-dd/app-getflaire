@@ -85,6 +85,13 @@ export interface Annonce {
   booster: boolean;
   created_at: string;
   nb_modifications?: number;
+  activity_status?: string;
+  activity_user_id?: string;
+  activity_actor?: string;
+  activity_note?: string;
+  activity_date?: string;
+  favorite_user_ids?: string[];
+  favorite_actors?: string[];
 }
 
 export interface AnnonceStatus {

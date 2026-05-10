@@ -3,6 +3,7 @@ import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import { Annonce, Client } from '../types';
 import { useAuth } from './useAuth';
+import { useActivityScope } from './useActivityScope';
 import {
   AlertMatchResult,
   AlertNotification,
@@ -286,6 +287,7 @@ const mapAlertRow = (row: any): SmartAlert => ({
 
 export const useSmartAlerts = () => {
   const { appUser } = useAuth();
+  const activityScope = useActivityScope();
   const [clients, setClients] = useState<Client[]>([]);
   const [alerts, setAlerts] = useState<SmartAlert[]>([]);
   const [results, setResults] = useState<AlertMatchResult[]>([]);
@@ -580,6 +582,7 @@ export const useSmartAlerts = () => {
         .insert({
           annonce_id: annonceId,
           user_id: appUser.id,
+          agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
           date_favoris: new Date().toISOString(),
         });
       if (queryError) throw queryError;
@@ -590,14 +593,26 @@ export const useSmartAlerts = () => {
 
   const addToFollowUp = async (annonceId: string, resultId?: string, statut = 'to_process') => {
     if (!appUser) throw new Error('Utilisateur introuvable');
-    const { error: queryError } = await supabase
+    const { data: existing, error: existingError } = await supabase
       .from('suivi_annonce')
-      .upsert({
-        annonce_id: annonceId,
-        user_id: appUser.id,
-        statut,
-        date_suivi: new Date().toISOString(),
-      });
+      .select('id')
+      .eq('annonce_id', annonceId)
+      .in('user_id', activityScope.userIds.length ? activityScope.userIds : [appUser.id])
+      .order('date_suivi', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingError) throw existingError;
+
+    const payload = {
+      annonce_id: annonceId,
+      user_id: appUser.id,
+      agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
+      statut,
+      date_suivi: new Date().toISOString(),
+    };
+    const { error: queryError } = existing
+      ? await supabase.from('suivi_annonce').update(payload).eq('id', existing.id)
+      : await supabase.from('suivi_annonce').insert(payload);
     if (queryError) throw queryError;
     if (resultId) await updateResultStatus(resultId, 'followed');
     toast.success(statut === 'to_call' ? 'Rappel préparé' : 'Ajouté au suivi');

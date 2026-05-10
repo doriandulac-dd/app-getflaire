@@ -3,6 +3,7 @@ import { format, parseISO, subDays } from 'date-fns';
 import toast from 'react-hot-toast';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
+import { useActivityScope } from './useActivityScope';
 import { ActivityItem, AnalyticsFilters, DonutData, EvolutionData, KPIData } from '../types/analytics';
 
 const initialKpis: KPIData = {
@@ -87,6 +88,7 @@ const safeCountOrDefault = async (
 
 export const useAnalytics = (filters: AnalyticsFilters) => {
   const { appUser } = useAuth();
+  const activityScope = useActivityScope();
   const [kpis, setKpis] = useState<KPIData>(initialKpis);
   const [evolution, setEvolution] = useState<EvolutionData[]>([]);
   const [propertyTypesPro, setPropertyTypesPro] = useState<DonutData[]>([]);
@@ -155,7 +157,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
   };
 
   const fetchKPIs = async () => {
-    if (!appUser) return;
+    if (!appUser || activityScope.loading || activityScope.userIds.length === 0) return;
 
     setKpiLoading(true);
     clearSectionError('kpis');
@@ -192,35 +194,35 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
           safeCountOrDefault(countAnnonces(undefined, `${startDate}T00:00:00.000Z`, `${endDate}T23:59:59.999Z`), 'annonces en ligne'),
           safeCountOrDefault(countAnnonces(undefined, `${previousStartDate}T00:00:00.000Z`, `${previousEndDate}T23:59:59.999Z`), 'annonces en ligne précédent'),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
+            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
             'annonces traitées'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
+            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
             'annonces traitées précédent'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('statut', 'called').gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
+            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('statut', 'called').gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
             'appels'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('statut', 'called').gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
+            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('statut', 'called').gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
             'appels précédent'
           ),
           safeCountOrDefault(
-            supabase.from('rappels').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('status', 'pending').gte('date_rappel', new Date().toISOString()),
+            supabase.from('rappels').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('status', 'pending').gte('date_rappel', new Date().toISOString()),
             'rappels'
           ),
           safeCountOrDefault(
-            supabase.from('rappels').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('status', 'pending').gte('date_rappel', `${previousStartDate}T00:00:00.000Z`).lte('date_rappel', `${previousEndDate}T23:59:59.999Z`),
+            supabase.from('rappels').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('status', 'pending').gte('date_rappel', `${previousStartDate}T00:00:00.000Z`).lte('date_rappel', `${previousEndDate}T23:59:59.999Z`),
             'rappels précédent'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('statut', 'to_process').gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
+            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('statut', 'to_process').gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
             'à traiter'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('statut', 'to_process').gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
+            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('statut', 'to_process').gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
             'à traiter précédent'
           ),
           safeCountOrDefault(countAnnonces('Particulier', `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`), 'particuliers aujourd’hui'),
@@ -228,7 +230,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
           safeCountOrDefault(countAnnonces('Pro', `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`), 'pros aujourd’hui'),
           safeCountOrDefault(countAnnonces('Pro', `${yesterdayStr}T00:00:00.000Z`, `${yesterdayStr}T23:59:59.999Z`), 'pros hier'),
           safeCountOrDefault(
-            supabase.from('surveillances').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('active', true),
+            supabase.from('surveillances').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('active', true),
             'surveillances'
           ),
         ]);
@@ -271,7 +273,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
   };
 
   const fetchEvolution = async () => {
-    if (!appUser) return;
+    if (!appUser || activityScope.loading || activityScope.userIds.length === 0) return;
     clearSectionError('evolution');
 
     try {
@@ -294,7 +296,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
             supabase
               .from('suivi_annonce')
               .select('date_suivi')
-              .eq('user_id', appUser.id)
+              .in('user_id', activityScope.userIds)
               .eq('statut', 'called')
               .gte('date_suivi', `${startDate}T00:00:00.000Z`)
               .lte('date_suivi', `${endDate}T23:59:59.999Z`),
@@ -401,18 +403,18 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
   };
 
   const fetchStatusDistribution = async () => {
-    if (!appUser) return;
+    if (!appUser || activityScope.loading || activityScope.userIds.length === 0) return;
     clearSectionError('statusDistribution');
 
     try {
       await measure('statusDistribution', async () => {
         const [{ count: favorisCount, error: favorisError }, { data: suiviData, error: suiviError }] = await Promise.all([
           withTimeout(
-            supabase.from('favoris').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id),
+            supabase.from('favoris').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds),
             'favoris'
           ),
           withTimeout(
-            supabase.from('suivi_annonce').select('statut').eq('user_id', appUser.id).limit(1000),
+            supabase.from('suivi_annonce').select('statut').in('user_id', activityScope.userIds).limit(1000),
             'statuts suivi'
           ),
         ]);
@@ -447,7 +449,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
   };
 
   const fetchRecentActivity = async () => {
-    if (!appUser) return;
+    if (!appUser || activityScope.loading || activityScope.userIds.length === 0) return;
     clearSectionError('recentActivity');
 
     try {
@@ -457,7 +459,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
             supabase
               .from('suivi_annonce')
               .select('id, date_suivi, statut, annonces!inner(title)')
-              .eq('user_id', appUser.id)
+              .in('user_id', activityScope.userIds)
               .eq('statut', 'called')
               .order('date_suivi', { ascending: false })
               .limit(5),
@@ -467,7 +469,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
             supabase
               .from('rappels')
               .select('id, created_at, title')
-              .eq('user_id', appUser.id)
+              .in('user_id', activityScope.userIds)
               .order('created_at', { ascending: false })
               .limit(5),
             'activité rappels'
@@ -476,7 +478,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
             supabase
               .from('surveillances')
               .select('id, created_at, annonces!inner(title)')
-              .eq('user_id', appUser.id)
+              .in('user_id', activityScope.userIds)
               .eq('active', true)
               .order('created_at', { ascending: false })
               .limit(5),
@@ -527,7 +529,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
   };
 
   useEffect(() => {
-    if (!appUser) return;
+    if (!appUser || activityScope.loading) return;
 
     void fetchKPIs();
 
@@ -544,7 +546,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
       setActivityLoading(true);
       fetchRecentActivity().finally(() => setActivityLoading(false));
     }, 180);
-  }, [appUser, filters]);
+  }, [appUser, filters, activityScope.loading, activityScope.userIds.join('|')]);
 
   const exportData = async () => {
     try {

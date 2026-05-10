@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useGSAP } from '@gsap/react';
 import { useSurveillance } from '../hooks/useSurveillance';
+import { useActivityScope } from '../hooks/useActivityScope';
 import { useAnnonces } from '../hooks/useProperties';
 import { PropertyFilters as PropertyFiltersType, SortOption } from '../types';
 import SurveillanceCard from '../components/Surveillance/SurveillanceCard';
@@ -30,6 +31,7 @@ import LoadingSkeleton from '../components/UI/LoadingSkeleton';
 import { gsap } from '../lib/animations';
 
 const Surveillance: React.FC = () => {
+  const activityScope = useActivityScope();
   const {
     surveillances,
     loading: surveillanceLoading,
@@ -260,7 +262,7 @@ const Surveillance: React.FC = () => {
               activeTab={activeTab}
               onChange={setActiveTab}
               tabs={[
-                { id: 'mes_surveillances', label: 'Mes surveillances', count: stats.total },
+                { id: 'mes_surveillances', label: activityScope.isAgencyScope ? 'Surveillances agence' : 'Mes surveillances', count: stats.total },
                 { id: 'recherche_stock', label: 'Recherche stock', count: annonces.length },
               ]}
             />
@@ -348,7 +350,9 @@ const Surveillance: React.FC = () => {
               <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-secondary-500">Watchlist</p>
-                  <h2 className="text-xl font-black text-secondary-950">Annonces surveillées</h2>
+                  <h2 className="text-xl font-black text-secondary-950">
+                    {activityScope.isAgencyScope ? 'Annonces surveillées par l’agence' : 'Annonces surveillées'}
+                  </h2>
                 </div>
                 <p className="text-sm font-medium text-secondary-600">
                   {stats.modified > 0 ? `${stats.modified} annonce${stats.modified > 1 ? 's' : ''} à relire en priorité` : 'Aucune alerte prioritaire pour le moment'}

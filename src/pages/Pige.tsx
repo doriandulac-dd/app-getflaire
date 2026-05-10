@@ -20,14 +20,14 @@ import { gsap } from '../lib/animations';
 
 const Pige: React.FC = () => {
   const { appUser } = useAuth();
-  const [filters, setFilters] = useState<PropertyFiltersType>({
-    owner_type: 'Particulier',
-  });
+  const [filters, setFilters] = useState<PropertyFiltersType>({});
   const [sort, setSort] = useState<SortOption>({ field: 'publication_date', direction: 'desc' });
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const itemsPerPage = appUser?.personalization_settings?.items_per_page || 20;
-  const { annonces, loading, error, hasMore, loadMore, refresh } = useAnnonces(filters, sort, itemsPerPage);
+  const { annonces, loading, error, hasMore, loadMore, refresh } = useAnnonces(filters, sort, itemsPerPage, {
+    ownerType: 'Particulier',
+  });
   const pigeRef = useGsapReveal<HTMLDivElement>([loading, annonces.length], {
     selector: '[data-gsap-reveal]',
     y: 16,
@@ -46,11 +46,11 @@ const Pige: React.FC = () => {
 
   const activeFiltersCount = useMemo(
     () =>
-      Object.values(filters).filter(
-        (value) =>
-          value !== undefined &&
-          value !== '' &&
-          (Array.isArray(value) ? value.length > 0 : true)
+      Object.entries(filters).filter(([key, value]) =>
+        key !== 'owner_type' &&
+        value !== undefined &&
+        value !== '' &&
+        (Array.isArray(value) ? value.length > 0 : true)
       ).length,
     [filters]
   );
@@ -153,9 +153,7 @@ const Pige: React.FC = () => {
   );
 
   const handleClearFilters = () => {
-    setFilters({
-      owner_type: 'Particulier',
-    });
+    setFilters({});
   };
 
   const handleLoadMore = () => {

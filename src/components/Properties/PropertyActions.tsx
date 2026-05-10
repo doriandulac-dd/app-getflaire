@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Heart, Clock, Phone, CheckCircle, Calendar, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
+import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
 
 interface PropertyStatus {
@@ -37,8 +38,11 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
   onUpdate,
 }) => {
   const { appUser } = useAuth();
+  const activityScope = useActivityScope();
   const [status, setStatus] = useState<PropertyStatus>(initialStatus);
   const [comment, setComment] = useState(initialComment);
+  const [statusActor, setStatusActor] = useState<string | null>(null);
+  const [favoriteActors, setFavoriteActors] = useState<string[]>([]);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('');
@@ -50,9 +54,10 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
   const [currentFavoriteId, setCurrentFavoriteId] = useState<string | null>(null);
 
   useEffect(() => {
+    if (activityScope.loading) return;
     fetchCurrentStatus();
     fetchFavoriteStatus();
-  }, [annonceId, appUser]);
+  }, [annonceId, appUser, activityScope.loading, activityScope.userIds.join('|')]);
 
   const fetchCurrentStatus = async () => {
     if (!appUser) return;
@@ -62,7 +67,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         .from('suivi_annonce')
         .select('*')
         .eq('annonce_id', annonceId)
-        .eq('user_id', appUser.id)
+        .in('user_id', activityScope.userIds)
         .order('date_suivi', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -71,6 +76,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
 
       if (data) {
         setCurrentSuiviId(data.id);
+        setStatusActor(activityScope.formatActor(data.user_id));
         const newStatus: PropertyStatus = {
           favorite: false, // Will be set by fetchFavoriteStatus
           to_process: data.statut === 'to_process',
@@ -83,6 +89,9 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         };
         setStatus(newStatus);
         setComment(data.note || '');
+      } else {
+        setCurrentSuiviId(null);
+        setStatusActor(null);
       }
     } catch (error) {
       console.error('Error fetching status:', error);
@@ -97,13 +106,14 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         .from('favoris')
         .select('*')
         .eq('annonce_id', annonceId)
-        .eq('user_id', appUser.id)
-        .maybeSingle();
+        .in('user_id', activityScope.userIds);
 
       if (error) throw error;
 
-      if (data) {
-        setCurrentFavoriteId(data.id);
+      const ownFavorite = data?.find(favorite => favorite.user_id === appUser.id) || null;
+      setFavoriteActors((data || []).map(favorite => activityScope.formatActor(favorite.user_id)));
+      if (data?.length) {
+        setCurrentFavoriteId(ownFavorite?.id || null);
         setStatus(prev => ({ ...prev, favorite: true }));
       } else {
         setCurrentFavoriteId(null);
@@ -119,7 +129,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
 
     setLoading(true);
     try {
-      if (status.favorite && currentFavoriteId) {
+      if (currentFavoriteId) {
         // Remove from favorites
         const { error } = await supabase
           .from('favoris')
@@ -138,6 +148,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
           .insert({
             annonce_id: annonceId,
             user_id: appUser.id,
+            agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
             date_favoris: new Date().toISOString(),
           })
           .select()
@@ -166,12 +177,14 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
       // Determine the main status
       let mainStatus = null;
       if (newStatus.called) mainStatus = 'called';
+      else if (newStatus.rdv) mainStatus = 'rdv';
       else if (newStatus.to_call) mainStatus = 'to_call';
       else if (newStatus.to_process) mainStatus = 'to_process';
 
       const updateData: any = {
         annonce_id: annonceId,
         user_id: appUser.id,
+        agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
         statut: mainStatus,
         note: newComment,
         date_suivi: new Date().toISOString(),
@@ -189,14 +202,17 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         updateData.date_suivi = newStatus.reminder_date;
       }
 
-      const { error } = await supabase
-        .from('suivi_annonce')
-        .upsert(updateData);
+      const result = currentSuiviId
+        ? await supabase.from('suivi_annonce').update(updateData).eq('id', currentSuiviId).select('id').single()
+        : await supabase.from('suivi_annonce').insert(updateData).select('id').single();
+      const { data, error } = result;
 
       if (error) throw error;
 
+      if (data?.id) setCurrentSuiviId(data.id);
       setStatus(newStatus);
       setComment(newComment);
+      setStatusActor(activityScope.formatActor(appUser.id));
       onUpdate?.(newStatus, newComment);
       toast.success('Statut mis à jour');
     } catch (error) {
@@ -397,6 +413,12 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         {/* Status Details */}
         {(status.called || status.to_call || status.rdv) && (
           <div className="mt-4 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
+            {statusActor && (
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-gray-600">Dernière action :</span>
+                <span className="font-medium text-secondary-700">{statusActor}</span>
+              </div>
+            )}
             {status.called && status.call_date && (
               <div className="flex items-center justify-between text-sm">
                 <span className="text-gray-600">Appelé le :</span>
@@ -421,6 +443,12 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
                 </span>
               </div>
             )}
+          </div>
+        )}
+        {favoriteActors.length > 0 && (
+          <div className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-700">
+            Favori par {favoriteActors.slice(0, 3).join(', ')}
+            {favoriteActors.length > 3 ? ` +${favoriteActors.length - 3}` : ''}
           </div>
         )}
 

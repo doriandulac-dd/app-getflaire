@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { useGSAP } from '@gsap/react';
 import { useAnalytics } from '../hooks/useAnalytics';
+import { useActivityScope } from '../hooks/useActivityScope';
 import { AnalyticsFilters } from '../types/analytics';
 import KPICard from '../components/Analytics/KPICard';
 import EvolutionChart from '../components/Analytics/EvolutionChart';
@@ -37,6 +38,7 @@ const Analytics: React.FC = () => {
     startDate: undefined,
     endDate: undefined,
   });
+  const activityScope = useActivityScope();
 
   const {
     kpis,
@@ -170,7 +172,7 @@ const Analytics: React.FC = () => {
               Analytics GetFlaire pour piloter la performance commerciale.
             </h1>
             <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-secondary-600 sm:text-base">
-              Suivez le volume d'annonces, les appels, la conversion, les relances et la surveillance depuis une vue plus claire et décisionnelle.
+              Suivez le volume d'annonces, les appels, la conversion, les relances et la surveillance depuis une vue {activityScope.isAgencyScope ? 'agence' : 'personnelle'} plus claire et décisionnelle.
             </p>
           </div>
 
@@ -178,7 +180,7 @@ const Analytics: React.FC = () => {
             <p className="text-xs font-black uppercase tracking-[0.16em] text-secondary-500">Lecture active</p>
             <p className="mt-2 text-2xl font-black text-secondary-950">{periodLabel}</p>
             <p className="mt-2 text-sm font-semibold text-secondary-600">
-              {filters.city ? `Ville filtrée : ${filters.city}` : 'Toutes les villes'} · données commerciales en temps réel
+              {filters.city ? `Ville filtrée : ${filters.city}` : 'Toutes les villes'} · données {activityScope.isAgencyScope ? 'agence' : 'personnelles'} en temps réel
             </p>
           </div>
         </div>

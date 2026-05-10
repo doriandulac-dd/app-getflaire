@@ -210,6 +210,11 @@ const SurveillanceCard: React.FC<SurveillanceCardProps> = ({ surveillance, onRem
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/70">
                     Surveillée depuis {formatDate(surveillance.date_surveillance)}
                   </p>
+                  {surveillance.actor_name && (
+                    <p className="mt-1 text-xs font-bold text-white/80">
+                      Par {surveillance.actor_name}
+                    </p>
+                  )}
                   <p className="mt-1 text-2xl font-black text-white">{formatPrice(surveillance.price)}</p>
                 </div>
                 <span className="rounded-full bg-white/15 p-2 text-white backdrop-blur transition group-hover:bg-white group-hover:text-secondary-950">

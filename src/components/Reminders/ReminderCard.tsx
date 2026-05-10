@@ -185,6 +185,11 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
                   {reminder.status === 'overdue' && <AlertCircle className="h-3.5 w-3.5" />}
                   {statusConfig.label}
                 </span>
+                {reminder.actor_name && (
+                  <span className="rounded-full bg-secondary-100 px-3 py-1 text-xs font-bold text-secondary-700">
+                    Par {reminder.actor_name}
+                  </span>
+                )}
                 {reminder.type_de_bien && (
                   <span className="rounded-full bg-secondary-100 px-3 py-1 text-xs font-bold text-secondary-700">
                     {reminder.type_de_bien}

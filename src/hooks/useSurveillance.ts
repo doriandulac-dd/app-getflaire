@@ -1,29 +1,32 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
+import { useActivityScope } from './useActivityScope';
 import { SurveillanceWithDetails, SurveillanceHistorique, SurveillanceSettings, SurveillanceFilters } from '../types/surveillance';
 import toast from 'react-hot-toast';
 
 export const useSurveillance = () => {
   const { appUser } = useAuth();
+  const activityScope = useActivityScope();
   const [surveillances, setSurveillances] = useState<SurveillanceWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<SurveillanceSettings | null>(null);
+  const [currentFilters, setCurrentFilters] = useState<SurveillanceFilters | undefined>();
 
   useEffect(() => {
-    if (appUser) {
+    if (appUser && !activityScope.loading) {
       refreshSurveillances();
       fetchSettings();
     }
     // eslint-disable-next-line
-  }, [appUser]);
+  }, [appUser, activityScope.loading, activityScope.userIds.join('|')]);
 
   // --- VERSION CORRIGÉE ---
   const fetchSurveillances = async (filters?: SurveillanceFilters, reset: boolean = false, limit: number = 20) => {
-    if (!appUser?.id || appUser.id === "undefined") {
+    if (!appUser?.id || appUser.id === "undefined" || activityScope.userIds.length === 0) {
       setLoading(false);
       return;
     }
@@ -36,7 +39,7 @@ export const useSurveillance = () => {
       let query = supabase
         .from('surveillances_with_details')
         .select('*', { count: 'exact' })
-        .eq('user_id', appUser.id)
+        .in('user_id', activityScope.userIds)
         .eq('active', true);
 
       // Applique les filtres, comme dans la pige
@@ -97,6 +100,8 @@ export const useSurveillance = () => {
       const newSurveillances = (annoncesRows || []).map(row => ({
         ...row,
         annonce_id: row.annonce_id, // Cette propriété devrait maintenant être disponible
+        actor_name: activityScope.formatActor(row.user_id),
+        is_own_action: activityScope.isOwnAction(row.user_id),
       }));
 
       if (reset) {
@@ -121,11 +126,12 @@ export const useSurveillance = () => {
 
   const loadMore = () => {
     if (!loading && hasMore) {
-      fetchSurveillances(undefined, false);
+      fetchSurveillances(currentFilters, false);
     }
   };
 
   const refreshSurveillances = (filters?: SurveillanceFilters) => {
+    setCurrentFilters(filters);
     setPage(1);
     fetchSurveillances(filters, true);
   };
@@ -153,6 +159,7 @@ export const useSurveillance = () => {
         .from('surveillances')
         .insert({
           user_id: appUser.id,
+          agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
           annonce_id: annonceId,
           notes: notes,
           active: true,
@@ -177,7 +184,7 @@ export const useSurveillance = () => {
         .from('surveillances')
         .update({ active: false })
         .eq('id', surveillanceId)
-        .eq('user_id', appUser?.id)
+        .in('user_id', activityScope.userIds)
         .select();
 
       if (error) throw error;
@@ -201,8 +208,8 @@ export const useSurveillance = () => {
       const { data, error } = await supabase
         .from('surveillances')
         .select('id')
-        .eq('user_id', appUser.id)
         .eq('annonce_id', annonceId)
+        .in('user_id', activityScope.userIds)
         .eq('active', true)
         .maybeSingle();
       if (error) throw error;

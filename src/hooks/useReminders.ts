@@ -1,17 +1,19 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './useAuth';
+import { useActivityScope } from './useActivityScope';
 import { ReminderFromSuivi, ReminderFilters, ProcessedReminder } from '../types/reminder';
 import toast from 'react-hot-toast';
 
 export const useReminders = (filters: ReminderFilters = {}) => {
   const { appUser } = useAuth();
+  const activityScope = useActivityScope();
   const [reminders, setReminders] = useState<ProcessedReminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchReminders = async () => {
-    if (!appUser?.id) {
+    if (!appUser?.id || activityScope.loading || activityScope.userIds.length === 0) {
       setLoading(false);
       return;
     }
@@ -25,6 +27,7 @@ export const useReminders = (filters: ReminderFilters = {}) => {
         .select(`
           id,
           user_id,
+          agency_id,
           annonce_id,
           statut,
           note,
@@ -40,7 +43,7 @@ export const useReminders = (filters: ReminderFilters = {}) => {
             image_urls
           )
         `)
-        .eq('user_id', appUser.id)
+        .in('user_id', activityScope.userIds)
         .in('statut', ['to_process', 'to_call', 'called', 'rdv'])
         .order('date_suivi', { ascending: false });
 
@@ -86,6 +89,9 @@ export const useReminders = (filters: ReminderFilters = {}) => {
         .map((item: any) => {
           const reminder: ProcessedReminder = {
             id: item.id,
+            user_id: item.user_id,
+            actor_name: activityScope.formatActor(item.user_id),
+            is_own_action: activityScope.isOwnAction(item.user_id),
             type: item.statut,
             title: getReminderTitle(item.statut, item.annonces?.title),
             scheduled_date: item.date_suivi,
@@ -169,9 +175,13 @@ export const useReminders = (filters: ReminderFilters = {}) => {
     try {
       const { error } = await supabase
         .from('suivi_annonce')
-        .update(updates)
+        .update({
+          ...updates,
+          user_id: appUser?.id,
+          agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
+        })
         .eq('id', id)
-        .eq('user_id', appUser?.id);
+        .in('user_id', activityScope.userIds);
 
       if (error) throw error;
 
@@ -191,7 +201,7 @@ export const useReminders = (filters: ReminderFilters = {}) => {
         .from('suivi_annonce')
         .delete()
         .eq('id', id)
-        .eq('user_id', appUser?.id);
+        .in('user_id', activityScope.userIds);
 
       if (error) throw error;
 
@@ -210,11 +220,13 @@ export const useReminders = (filters: ReminderFilters = {}) => {
       const { error } = await supabase
         .from('suivi_annonce')
         .update({ 
+          user_id: appUser?.id,
+          agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
           statut: 'called',
           date_suivi: new Date().toISOString()
         })
         .eq('id', id)
-        .eq('user_id', appUser?.id);
+        .in('user_id', activityScope.userIds);
 
       if (error) throw error;
 
@@ -230,7 +242,7 @@ export const useReminders = (filters: ReminderFilters = {}) => {
 
   useEffect(() => {
     fetchReminders();
-  }, [appUser, filters]);
+  }, [appUser, filters, activityScope.loading, activityScope.userIds.join('|')]);
 
   return {
     reminders,

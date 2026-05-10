@@ -25,11 +25,13 @@ import { Annonce } from '../types';
 import { AnalyticsFilters } from '../types/analytics';
 import { useAuth } from '../hooks/useAuth';
 import { useAnalytics } from '../hooks/useAnalytics';
+import { useActivityScope } from '../hooks/useActivityScope';
 import { useNavigate } from 'react-router-dom';
 import { useGsapReveal } from '../hooks/useGsapReveal';
 
 const Dashboard: React.FC = () => {
   const { appUser } = useAuth();
+  const activityScope = useActivityScope();
   const navigate = useNavigate();
   const [filters, setFilters] = useState<AnalyticsFilters>({ period: '7' });
 
@@ -62,7 +64,7 @@ const Dashboard: React.FC = () => {
 
   // Dernières annonces Pige — vue + dédup par id_annnoce, particuliers en ligne
   const fetchSpecialAnnonces = async () => {
-    if (!appUser?.id) return;
+    if (!appUser?.id || activityScope.loading || activityScope.userIds.length === 0) return;
     try {
       setLoadingAnnonces(true);
 
@@ -112,7 +114,7 @@ const Dashboard: React.FC = () => {
       const { data: surveillancesData, error: surveillancesError } = await supabase
         .from('surveillances')
         .select('annonce_id')
-        .eq('user_id', appUser.id)
+        .in('user_id', activityScope.userIds)
         .eq('active', true)
         .order('date_surveillance', { ascending: false }) // ou created_at selon ton schéma
         .limit(10); // ← on charge jusqu'à 10 pour le carrousel
@@ -147,11 +149,11 @@ const Dashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    if (appUser) {
+    if (appUser && !activityScope.loading) {
       fetchSpecialAnnonces();
       fetchMonitoredAnnonces();
     }
-  }, [appUser]);
+  }, [appUser, activityScope.loading, activityScope.userIds.join('|')]);
 
   // reset indices quand les listes changent
   useEffect(() => { setCurrentPigeIndex(0); }, [lastPigeAnnonce.length]);
@@ -231,7 +233,7 @@ const Dashboard: React.FC = () => {
       className: 'bg-secondary-900 text-white',
     },
     {
-      label: 'Surveillances actives',
+      label: activityScope.isAgencyScope ? 'Surveillances agence' : 'Surveillances actives',
       value: monitoredAnnonces.length,
       helper: 'Biens suivis en temps réel',
       icon: Eye,
@@ -260,7 +262,7 @@ const Dashboard: React.FC = () => {
                 {firstName}, pilotez votre activité immobilière sans perdre le fil.
               </h1>
               <p className="mt-4 max-w-2xl text-sm leading-6 text-white/72 sm:text-base">
-                Vue métier centralisée pour la pige, les rappels et les biens surveillés de {agencyName}.
+                Vue métier centralisée pour la pige, les rappels et les biens surveillés de {activityScope.isAgencyScope ? `l'équipe ${agencyName}` : agencyName}.
               </p>
             </div>
 
@@ -430,7 +432,7 @@ const Dashboard: React.FC = () => {
             color="primary"
           />
           <StatsCard
-            title="Surveillances actives"
+            title={activityScope.isAgencyScope ? 'Surveillances agence' : 'Surveillances actives'}
             value={kpiLoading ? '...' : kpis.surveillancesActives}
             icon={Eye}
             color="secondary"

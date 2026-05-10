@@ -1,6 +1,7 @@
 export interface ReminderFromSuivi {
   id: string;
   user_id: string;
+  agency_id?: string | null;
   annonce_id: string;
   statut: 'to_process' | 'to_call' | 'called' | 'rdv' | 'hidden';
   note?: string;
@@ -36,6 +37,9 @@ export interface ReminderFormData {
 
 export interface ProcessedReminder {
   id: string;
+  user_id: string;
+  actor_name?: string;
+  is_own_action?: boolean;
   type: 'to_process' | 'to_call' | 'called' | 'rdv';
   title: string;
   scheduled_date: string;

@@ -1,6 +1,7 @@
 export interface Surveillance {
   id: string;
   user_id: string;
+  agency_id?: string | null;
   annonce_id: string;
   date_surveillance: string;
   active: boolean;
@@ -24,6 +25,8 @@ export interface SurveillanceWithDetails extends Surveillance {
   nb_modifications: number;
   derniere_modification?: string;
   type_derniere_modification?: string;
+  actor_name?: string;
+  is_own_action?: boolean;
 }
 
 export interface SurveillanceHistorique {

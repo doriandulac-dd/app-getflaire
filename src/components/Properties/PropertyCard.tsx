@@ -16,6 +16,7 @@ import { Annonce, AnnonceStatus } from '../../types';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { useSurveillance } from '../../hooks/useSurveillance';
+import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
 
 interface PropertyCardProps {
@@ -34,6 +35,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
   variant = 'grid',
 }) => {
   const { appUser } = useAuth();
+  const activityScope = useActivityScope();
   const { isSurveilled } = useSurveillance();
   const navigate = useNavigate();
   const [currentStatus, setCurrentStatus] = useState({
@@ -43,18 +45,22 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
     called: false,
     hidden: false,
   });
+  const [statusActor, setStatusActor] = useState<string | null>(annonce.activity_actor || null);
+  const [favoriteActors, setFavoriteActors] = useState<string[]>(annonce.favorite_actors || []);
+  const [currentSuiviId, setCurrentSuiviId] = useState<string | null>(null);
+  const [currentOwnFavoriteId, setCurrentOwnFavoriteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isUnderSurveillance, setIsUnderSurveillance] = useState(false);
 
   useEffect(() => {
-    if (appUser) {
+    if (appUser && !activityScope.loading) {
       fetchCurrentStatus();
       if (showSurveillanceButton) {
         checkSurveillanceStatus();
       }
     }
     // eslint-disable-next-line
-  }, [annonce.id, appUser]);
+  }, [annonce.id, appUser, activityScope.loading, activityScope.userIds.join('|')]);
 
   const checkSurveillanceStatus = async () => {
     const surveilled = await isSurveilled(annonce.id);
@@ -70,9 +76,9 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         const { data: surveillanceData, error: fetchError } = await supabase
           .from('surveillances')
           .select('id')
-          .eq('user_id', appUser?.id)
           .eq('annonce_id', annonce.id)
           .eq('active', true)
+          .in('user_id', activityScope.userIds)
           .maybeSingle();
 
         if (fetchError) throw fetchError;
@@ -80,7 +86,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         if (surveillanceData) {
           const { error: updateError } = await supabase
             .from('surveillances')
-            .update({ active: false })
+            .update({ active: false, user_id: appUser?.id, agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null })
             .eq('id', surveillanceData.id);
 
           if (updateError) throw updateError;
@@ -93,8 +99,8 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         const { data: existing, error: fetchError } = await supabase
           .from('surveillances')
           .select('id, active')
-          .eq('user_id', appUser?.id)
           .eq('annonce_id', annonce.id)
+          .in('user_id', activityScope.userIds)
           .maybeSingle();
 
         if (fetchError) throw fetchError;
@@ -102,7 +108,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         if (existing) {
           const { error: updateError } = await supabase
             .from('surveillances')
-            .update({ active: true })
+            .update({ active: true, user_id: appUser?.id, agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null })
             .eq('id', existing.id);
 
           if (updateError) throw updateError;
@@ -110,6 +116,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         } else {
           const { error: insertError } = await supabase.from('surveillances').insert({
             user_id: appUser?.id,
+            agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
             annonce_id: annonce.id,
             active: true,
             created_at: new Date().toISOString(),
@@ -135,7 +142,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         .from('suivi_annonce')
         .select('*')
         .eq('annonce_id', annonce.id)
-        .eq('user_id', appUser.id)
+        .in('user_id', activityScope.userIds)
         .order('date_suivi', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -144,11 +151,16 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         .from('favoris')
         .select('*')
         .eq('annonce_id', annonce.id)
-        .eq('user_id', appUser.id)
-        .maybeSingle();
+        .in('user_id', activityScope.userIds);
+
+      const ownFavorite = favoriteData?.find(favorite => favorite.user_id === appUser.id) || null;
+      setCurrentSuiviId(suiviData?.id || null);
+      setCurrentOwnFavoriteId(ownFavorite?.id || null);
+      setStatusActor(suiviData?.user_id ? activityScope.formatActor(suiviData.user_id) : null);
+      setFavoriteActors((favoriteData || []).map(favorite => activityScope.formatActor(favorite.user_id)));
 
       setCurrentStatus({
-        favorite: !!favoriteData,
+        favorite: Boolean(favoriteData?.length),
         to_process: suiviData?.statut === 'to_process',
         to_call: suiviData?.statut === 'to_call',
         called: suiviData?.statut === 'called',
@@ -208,11 +220,11 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
     setLoading(true);
     try {
       if (statusKey === 'favorite') {
-        if (currentStatus.favorite) {
+        if (currentOwnFavoriteId) {
           const { error } = await supabase
             .from('favoris')
             .delete()
-            .eq('annonce_id', annonce.id)
+            .eq('id', currentOwnFavoriteId)
             .eq('user_id', appUser.id);
 
           if (error) throw error;
@@ -221,6 +233,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
           const { error } = await supabase.from('favoris').insert({
             annonce_id: annonce.id,
             user_id: appUser.id,
+            agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
             date_favoris: new Date().toISOString(),
           });
 
@@ -234,14 +247,21 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         else if (statusKey === 'to_process') statut = 'to_process';
         else if (statusKey === 'hidden') statut = 'hidden';
 
-        const { error } = await supabase.from('suivi_annonce').upsert({
+        const payload = {
           annonce_id: annonce.id,
           user_id: appUser.id,
+          agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
           statut,
           date_suivi: new Date().toISOString(),
-        });
+        };
+
+        const result = currentSuiviId
+          ? await supabase.from('suivi_annonce').update(payload).eq('id', currentSuiviId).select('id').single()
+          : await supabase.from('suivi_annonce').insert(payload).select('id').single();
+        const { data, error } = result;
 
         if (error) throw error;
+        if (data?.id) setCurrentSuiviId(data.id);
         toast.success(`Statut mis a jour : ${statusConfig[statusKey].label}`);
       }
 
@@ -262,13 +282,17 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
       if (newStatus) {
         await handleStatusChange(statusKey);
       } else {
+        if (!currentSuiviId) {
+          await fetchCurrentStatus();
+          return;
+        }
         setLoading(true);
         try {
           const { error } = await supabase
             .from('suivi_annonce')
             .delete()
-            .eq('annonce_id', annonce.id)
-            .eq('user_id', appUser.id);
+            .eq('id', currentSuiviId || '')
+            .in('user_id', activityScope.userIds);
 
           if (error) throw error;
           await fetchCurrentStatus();
@@ -423,10 +447,16 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                 </div>
                 {showSurveillanceButton && (
                   <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
-                    Surveillance
+                    {isUnderSurveillance ? 'Surveillee' : 'Surveillance'}
                   </span>
                 )}
               </div>
+              {(statusActor || favoriteActors.length > 0) && !showSurveillanceButton && (
+                <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-secondary-500">
+                  {statusActor && <span>Statut par {statusActor}</span>}
+                  {favoriteActors.length > 0 && <span>Favori par {favoriteActors.slice(0, 2).join(', ')}{favoriteActors.length > 2 ? ` +${favoriteActors.length - 2}` : ''}</span>}
+                </div>
+              )}
             </div>
 
             <div className={`mt-4 flex items-center ${isList ? 'xl:mt-0 xl:justify-end' : 'justify-between'} gap-3`}>
