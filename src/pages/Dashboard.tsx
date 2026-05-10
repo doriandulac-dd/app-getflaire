@@ -7,6 +7,7 @@ import {
   Users,
   Home,
   BarChart3,
+  Radar,
   Clock,
   AlertCircle,
   ArrowRight,
@@ -364,10 +365,11 @@ const Dashboard: React.FC = () => {
           </div>
           <p className="text-sm text-secondary-500">Accès direct aux workflows du jour.</p>
         </div>
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
           {[
             { label: 'Nouvelle pige', icon: Search, to: '/pige' },
             { label: 'Surveillance', icon: Eye, to: '/surveillance' },
+            { label: 'Alertes intelligentes', icon: Radar, to: '/alertes-intelligentes' },
             { label: 'Rappel', icon: Calendar, to: '/reminders' },
             { label: 'Analytics', icon: BarChart3, to: '/analytics' },
           ].map(({ label, icon: Icon, to }) => (
@@ -426,6 +428,12 @@ const Dashboard: React.FC = () => {
             trend={{ value: kpis.newPropertiesParticulierTodayVariation, isPositive: kpis.newPropertiesParticulierTodayVariation >= 0 }}
             comparisonPeriod="vs. hier"
             color="primary"
+          />
+          <StatsCard
+            title="Surveillances actives"
+            value={kpiLoading ? '...' : kpis.surveillancesActives}
+            icon={Eye}
+            color="secondary"
           />
         </div>
       </div>

@@ -32,6 +32,7 @@ const initialKpis: KPIData = {
 
 type ErrorSection = 'kpis' | 'evolution' | 'propertyTypes' | 'statusDistribution' | 'recentActivity';
 type ErrorBySection = Partial<Record<ErrorSection, string>>;
+type CountStrategy = 'exact' | 'planned' | 'estimated';
 
 const withTimeout = async <T,>(promise: PromiseLike<T>, label: string, timeoutMs = 6500): Promise<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -67,6 +68,21 @@ const safeCount = async (query: PromiseLike<{ count: number | null; error: unkno
   const result = await withTimeout(query, label);
   if (result.error) throw result.error;
   return result.count || 0;
+};
+
+const safeCountOrDefault = async (
+  query: PromiseLike<{ count: number | null; error: unknown }>,
+  label: string,
+  fallback = 0
+) => {
+  try {
+    return await safeCount(query, label);
+  } catch (error) {
+    if (isPerfDebugEnabled()) {
+      console.warn(`[dashboard] ${label}: ${getErrorMessage(error)}`);
+    }
+    return fallback;
+  }
 };
 
 export const useAnalytics = (filters: AnalyticsFilters) => {
@@ -119,10 +135,15 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
     return filters.city ? query.ilike('city', `%${filters.city}%`) : query;
   };
 
-  const countAnnonces = (ownerType?: string, from?: string, to?: string) => {
+  const countAnnonces = (
+    ownerType?: string,
+    from?: string,
+    to?: string,
+    count: CountStrategy = 'estimated'
+  ) => {
     let query = supabase
       .from('annonces')
-      .select('id', { count: 'exact', head: true })
+      .select('id', { count, head: true })
       .eq('en_ligne', true)
       .eq('supprimee', false);
 
@@ -149,9 +170,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
 
         const [
           totalAnnonces,
-          totalAnnoncesPrevious,
           totalAnnoncesPro,
-          totalAnnoncesProPrevious,
           totalOnlineAnnonces,
           totalOnlineAnnoncesPrevious,
           propertiesProcessed,
@@ -168,49 +187,47 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
           newPropertiesProYesterday,
           surveillancesActives,
         ] = await Promise.all([
-          safeCount(countAnnonces('Particulier'), 'total particuliers'),
-          safeCount(countAnnonces('Particulier'), 'total particuliers précédent'),
-          safeCount(countAnnonces('Pro'), 'total pros'),
-          safeCount(countAnnonces('Pro'), 'total pros précédent'),
-          safeCount(countAnnonces(undefined, `${startDate}T00:00:00.000Z`, `${endDate}T23:59:59.999Z`), 'annonces en ligne'),
-          safeCount(countAnnonces(undefined, `${previousStartDate}T00:00:00.000Z`, `${previousEndDate}T23:59:59.999Z`), 'annonces en ligne précédent'),
-          safeCount(
+          safeCountOrDefault(countAnnonces('Particulier'), 'total particuliers'),
+          safeCountOrDefault(countAnnonces('Pro'), 'total pros'),
+          safeCountOrDefault(countAnnonces(undefined, `${startDate}T00:00:00.000Z`, `${endDate}T23:59:59.999Z`), 'annonces en ligne'),
+          safeCountOrDefault(countAnnonces(undefined, `${previousStartDate}T00:00:00.000Z`, `${previousEndDate}T23:59:59.999Z`), 'annonces en ligne précédent'),
+          safeCountOrDefault(
             supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
             'annonces traitées'
           ),
-          safeCount(
+          safeCountOrDefault(
             supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
             'annonces traitées précédent'
           ),
-          safeCount(
+          safeCountOrDefault(
             supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('statut', 'called').gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
             'appels'
           ),
-          safeCount(
+          safeCountOrDefault(
             supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('statut', 'called').gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
             'appels précédent'
           ),
-          safeCount(
+          safeCountOrDefault(
             supabase.from('rappels').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('status', 'pending').gte('date_rappel', new Date().toISOString()),
             'rappels'
           ),
-          safeCount(
+          safeCountOrDefault(
             supabase.from('rappels').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('status', 'pending').gte('date_rappel', `${previousStartDate}T00:00:00.000Z`).lte('date_rappel', `${previousEndDate}T23:59:59.999Z`),
             'rappels précédent'
           ),
-          safeCount(
+          safeCountOrDefault(
             supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('statut', 'to_process').gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
             'à traiter'
           ),
-          safeCount(
+          safeCountOrDefault(
             supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('statut', 'to_process').gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
             'à traiter précédent'
           ),
-          safeCount(countAnnonces('Particulier', `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`), 'particuliers aujourd’hui'),
-          safeCount(countAnnonces('Particulier', `${yesterdayStr}T00:00:00.000Z`, `${yesterdayStr}T23:59:59.999Z`), 'particuliers hier'),
-          safeCount(countAnnonces('Pro', `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`), 'pros aujourd’hui'),
-          safeCount(countAnnonces('Pro', `${yesterdayStr}T00:00:00.000Z`, `${yesterdayStr}T23:59:59.999Z`), 'pros hier'),
-          safeCount(
+          safeCountOrDefault(countAnnonces('Particulier', `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`), 'particuliers aujourd’hui'),
+          safeCountOrDefault(countAnnonces('Particulier', `${yesterdayStr}T00:00:00.000Z`, `${yesterdayStr}T23:59:59.999Z`), 'particuliers hier'),
+          safeCountOrDefault(countAnnonces('Pro', `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`), 'pros aujourd’hui'),
+          safeCountOrDefault(countAnnonces('Pro', `${yesterdayStr}T00:00:00.000Z`, `${yesterdayStr}T23:59:59.999Z`), 'pros hier'),
+          safeCountOrDefault(
             supabase.from('surveillances').select('id', { count: 'exact', head: true }).eq('user_id', appUser.id).eq('active', true),
             'surveillances'
           ),
@@ -219,13 +236,13 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
         const variation = (current: number, previous: number) =>
           previous ? Math.round(((current - previous) / previous) * 100) : 0;
         const conversionRate = totalAnnonces ? (appelsPasses / totalAnnonces) * 100 : 0;
-        const conversionRatePrevious = totalAnnoncesPrevious ? (appelsPassesPrevious / totalAnnoncesPrevious) * 100 : 0;
+        const conversionRatePrevious = totalOnlineAnnoncesPrevious ? (appelsPassesPrevious / totalOnlineAnnoncesPrevious) * 100 : 0;
 
         setKpis({
           totalAnnonces,
-          totalAnnoncesVariation: variation(totalAnnonces, totalAnnoncesPrevious),
+          totalAnnoncesVariation: 0,
           totalAnnoncesPro,
-          totalAnnoncesProVariation: variation(totalAnnoncesPro, totalAnnoncesProPrevious),
+          totalAnnoncesProVariation: 0,
           totalOnlineAnnonces,
           totalOnlineAnnoncesVariation: variation(totalOnlineAnnonces, totalOnlineAnnoncesPrevious),
           propertiesProcessed,
