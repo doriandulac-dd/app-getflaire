@@ -25,8 +25,12 @@ const Pige: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   const itemsPerPage = appUser?.personalization_settings?.items_per_page || 20;
+  const authorizedDepartments = appUser?.departements_autorises || [];
+  const hasNoAuthorizedDepartments = Boolean(appUser) && authorizedDepartments.length === 0;
   const { annonces, loading, error, hasMore, loadMore, refresh } = useAnnonces(filters, sort, itemsPerPage, {
     ownerType: 'Particulier',
+    departments: authorizedDepartments,
+    requireDepartments: true,
   });
   const pigeRef = useGsapReveal<HTMLDivElement>([loading, annonces.length], {
     selector: '[data-gsap-reveal]',
@@ -341,6 +345,15 @@ const Pige: React.FC = () => {
         </div>
       )}
 
+      {hasNoAuthorizedDepartments && !loading && !error && (
+        <div className="rounded-3xl border border-primary-200 bg-primary-50 p-5 text-primary-900" data-gsap-reveal>
+          <p className="font-semibold">Aucun departement actif dans votre abonnement</p>
+          <p className="mt-1 text-sm text-primary-800">
+            Ajoutez au moins un departement depuis vos parametres ou votre abonnement pour afficher la pige immobiliere.
+          </p>
+        </div>
+      )}
+
       <div ref={resultsRef}>
         {annonces.length > 0 ? (
           <div
@@ -361,7 +374,7 @@ const Pige: React.FC = () => {
             ))}
           </div>
         ) : (
-          !loading && (
+          !loading && !hasNoAuthorizedDepartments && (
             <div className="rounded-3xl border border-dashed border-gray-300 bg-white/70 px-6 py-14 text-center" data-gsap-reveal>
               <p className="text-lg font-semibold text-secondary-800">
                 Aucune annonce ne correspond a ces criteres.

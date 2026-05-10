@@ -11,11 +11,122 @@ const PROPERTY_TYPE_ALIASES: Record<string, string[]> = {
   Commercial: ['commercial', 'commerce', 'local', 'bureau', 'bureaux'],
 };
 
+const DEPARTMENT_LABELS: Record<string, string[]> = {
+  '01': ['Ain'],
+  '02': ['Aisne'],
+  '03': ['Allier'],
+  '04': ['Alpes-de-Haute-Provence'],
+  '05': ['Hautes-Alpes'],
+  '06': ['Alpes-Maritimes'],
+  '07': ['Ardeche', 'Ardèche'],
+  '08': ['Ardennes'],
+  '09': ['Ariege', 'Ariège'],
+  '10': ['Aube'],
+  '11': ['Aude'],
+  '12': ['Aveyron'],
+  '13': ['Bouches-du-Rhone', 'Bouches-du-Rhône'],
+  '14': ['Calvados'],
+  '15': ['Cantal'],
+  '16': ['Charente'],
+  '17': ['Charente-Maritime'],
+  '18': ['Cher'],
+  '19': ['Correze', 'Corrèze'],
+  '21': ['Cote-d Or', "Cote-d'Or", "Côte-d'Or"],
+  '22': ['Cotes-d Armor', "Cotes-d'Armor", "Côtes-d'Armor"],
+  '23': ['Creuse'],
+  '24': ['Dordogne'],
+  '25': ['Doubs'],
+  '26': ['Drome', 'Drôme'],
+  '27': ['Eure'],
+  '28': ['Eure-et-Loir'],
+  '29': ['Finistere', 'Finistère'],
+  '30': ['Gard'],
+  '31': ['Haute-Garonne'],
+  '32': ['Gers'],
+  '33': ['Gironde'],
+  '34': ['Herault', 'Hérault'],
+  '35': ['Ille-et-Vilaine'],
+  '36': ['Indre'],
+  '37': ['Indre-et-Loire'],
+  '38': ['Isere', 'Isère'],
+  '39': ['Jura'],
+  '40': ['Landes'],
+  '41': ['Loir-et-Cher'],
+  '42': ['Loire'],
+  '43': ['Haute-Loire'],
+  '44': ['Loire-Atlantique'],
+  '45': ['Loiret'],
+  '46': ['Lot'],
+  '47': ['Lot-et-Garonne'],
+  '48': ['Lozere', 'Lozère'],
+  '49': ['Maine-et-Loire'],
+  '50': ['Manche'],
+  '51': ['Marne'],
+  '52': ['Haute-Marne'],
+  '53': ['Mayenne'],
+  '54': ['Meurthe-et-Moselle'],
+  '55': ['Meuse'],
+  '56': ['Morbihan'],
+  '57': ['Moselle'],
+  '58': ['Nievre', 'Nièvre'],
+  '59': ['Nord'],
+  '60': ['Oise'],
+  '61': ['Orne'],
+  '62': ['Pas-de-Calais'],
+  '63': ['Puy-de-Dome', 'Puy-de-Dôme'],
+  '64': ['Pyrenees-Atlantiques', 'Pyrénées-Atlantiques'],
+  '65': ['Hautes-Pyrenees', 'Hautes-Pyrénées'],
+  '66': ['Pyrenees-Orientales', 'Pyrénées-Orientales'],
+  '67': ['Bas-Rhin'],
+  '68': ['Haut-Rhin'],
+  '69': ['Rhone', 'Rhône'],
+  '70': ['Haute-Saone', 'Haute-Saône'],
+  '71': ['Saone-et-Loire', 'Saône-et-Loire'],
+  '72': ['Sarthe'],
+  '73': ['Savoie'],
+  '74': ['Haute-Savoie'],
+  '75': ['Paris'],
+  '76': ['Seine-Maritime'],
+  '77': ['Seine-et-Marne'],
+  '78': ['Yvelines'],
+  '79': ['Deux-Sevres', 'Deux-Sèvres'],
+  '80': ['Somme'],
+  '81': ['Tarn'],
+  '82': ['Tarn-et-Garonne'],
+  '83': ['Var'],
+  '84': ['Vaucluse'],
+  '85': ['Vendee', 'Vendée'],
+  '86': ['Vienne'],
+  '87': ['Haute-Vienne'],
+  '88': ['Vosges'],
+  '89': ['Yonne'],
+  '90': ['Territoire de Belfort'],
+  '91': ['Essonne'],
+  '92': ['Hauts-de-Seine'],
+  '93': ['Seine-Saint-Denis'],
+  '94': ['Val-de-Marne'],
+  '95': ["Val-d Oise", "Val-d'Oise"],
+  '971': ['Guadeloupe'],
+  '972': ['Martinique'],
+  '973': ['Guyane'],
+  '974': ['La Reunion', 'La Réunion'],
+  '976': ['Mayotte'],
+  '2A': ['Corse-du-Sud'],
+  '2B': ['Haute-Corse'],
+};
+
 const normalizePropertyType = (value?: string | null) =>
   (value || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
+
+const normalizeText = (value?: string | null) =>
+  (value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
 
 const getPropertyTypeAliases = (type: string) => {
   const aliases = PROPERTY_TYPE_ALIASES[type] || [type];
@@ -37,11 +148,76 @@ const matchesPropertyTypeFilter = (annonce: Annonce, selectedTypes?: string[]) =
   });
 };
 
+type UseAnnoncesOptions = {
+  ownerType?: string;
+  departments?: string[];
+  requireDepartments?: boolean;
+};
+
+const QUERY_TIMEOUT_MS = 12000;
+
+const normalizeDepartment = (value?: string | null) => {
+  const raw = (value || '').trim().toUpperCase();
+  if (!raw) return '';
+  if (raw === '2A' || raw === '2B') return raw;
+
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  return digits.padStart(2, '0').slice(0, 3);
+};
+
+const DEPARTMENT_NAME_TO_CODE = Object.entries(DEPARTMENT_LABELS).reduce((map, [code, labels]) => {
+  labels.forEach(label => map.set(normalizeText(label), code));
+  return map;
+}, new Map<string, string>());
+
+const normalizeDepartments = (departments?: string[]) =>
+  Array.from(new Set((departments || []).map(department => {
+    const code = normalizeDepartment(department);
+    if (code) return code;
+    return DEPARTMENT_NAME_TO_CODE.get(normalizeText(department)) || '';
+  }).filter(Boolean)));
+
+const getDepartmentLabels = (department: string) => DEPARTMENT_LABELS[department] || [];
+
+const getDepartmentFromPostalCode = (postalCode?: string | null) => {
+  const normalized = (postalCode || '').trim();
+  if (normalized.startsWith('20')) return '2A';
+  return normalizeDepartment(normalized.slice(0, 2));
+};
+
+const matchesDepartmentScope = (annonce: Annonce, departments?: string[]) => {
+  const allowedDepartments = normalizeDepartments(departments);
+  if (!allowedDepartments.length) return true;
+
+  const annonceDepartment = normalizeDepartment(annonce.departement)
+    || DEPARTMENT_NAME_TO_CODE.get(normalizeText(annonce.departement))
+    || '';
+  const postalDepartment = getDepartmentFromPostalCode(annonce.postal_code);
+
+  return allowedDepartments.some(department =>
+    department === annonceDepartment || department === postalDepartment
+  );
+};
+
+const withTimeout = async <T>(promise: PromiseLike<T>, label: string): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(`${label} a pris trop de temps`)), QUERY_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
+
 export const useAnnonces = (
   filters: PropertyFilters = {},
   sort: SortOption = { field: 'publication_date', direction: 'desc' },
   limit: number = 20,
-  options: { ownerType?: string } = {}
+  options: UseAnnoncesOptions = {}
 ) => {
   const [annonces, setAnnonces] = useState<Annonce[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,6 +237,14 @@ export const useAnnonces = (
       if (reset) {
         setPage(1);
         setHasMore(true);
+      }
+
+      const scopedDepartments = normalizeDepartments(options.departments);
+      if (options.requireDepartments && scopedDepartments.length === 0) {
+        setAnnonces([]);
+        setHasMore(false);
+        setPage(1);
+        return;
       }
 
       let query = supabase
@@ -120,6 +304,18 @@ export const useAnnonces = (
         query = query.eq('owner_type', filters.owner_type);
       }
 
+      if (scopedDepartments.length > 0) {
+        const departmentFilters = scopedDepartments.flatMap(department => {
+          const postalPrefix = department === '2A' || department === '2B' ? '20' : department;
+          return [
+            `departement.eq.${department}`,
+            `postal_code.like.${postalPrefix}%`,
+            ...getDepartmentLabels(department).map(label => `departement.ilike.%${label}%`),
+          ];
+        });
+        query = query.or(departmentFilters.join(','));
+      }
+
       if (filters.url_search) {
         query = query.eq('url', filters.url_search);
       }
@@ -132,14 +328,20 @@ export const useAnnonces = (
 
       if (appUser && activityScope.userIds.length > 0 && !filters.include_all_statuses && (filters.status?.length || filters.non_processed)) {
         const [allFavoritesResult, allSuiviResult] = await Promise.all([
-          supabase
-            .from('favoris')
-            .select('annonce_id')
-            .in('user_id', activityScope.userIds),
-          supabase
-            .from('suivi_annonce')
-            .select('annonce_id, statut')
-            .in('user_id', activityScope.userIds),
+          withTimeout(
+            supabase
+              .from('favoris')
+              .select('annonce_id')
+              .in('user_id', activityScope.userIds),
+            'favoris'
+          ),
+          withTimeout(
+            supabase
+              .from('suivi_annonce')
+              .select('annonce_id, statut')
+              .in('user_id', activityScope.userIds),
+            'suivi'
+          ),
         ]);
 
         if (allFavoritesResult.error) throw allFavoritesResult.error;
@@ -182,7 +384,7 @@ export const useAnnonces = (
       const to = from + limit - 1;
       query = query.range(from, to);
 
-      const { data, error: queryError, count } = await query;
+      const { data, error: queryError, count } = await withTimeout(query, 'chargement des annonces');
 
       if (queryError) throw queryError;
       if (requestId !== requestIdRef.current) return;
@@ -194,6 +396,10 @@ export const useAnnonces = (
           matchesPropertyTypeFilter(annonce, filters.property_types)
         );
       }
+
+      newAnnonces = newAnnonces.filter(annonce =>
+        matchesDepartmentScope(annonce, scopedDepartments)
+      );
 
       // Fetch user statuses for all annonces (for filtering)
       let userFavoritedIds: Set<string> = new Set();
@@ -207,17 +413,23 @@ export const useAnnonces = (
         
         // Fetch all user favorites and statuses
         const [favoritesResult, suiviResult] = await Promise.all([
-          supabase
-            .from('favoris')
-            .select('annonce_id, user_id')
-            .in('user_id', activityScope.userIds)
-            .in('annonce_id', annonceIds),
-          supabase
-            .from('suivi_annonce')
-            .select('annonce_id, statut, user_id, note, date_suivi')
-            .in('user_id', activityScope.userIds)
-            .in('annonce_id', annonceIds)
-            .order('date_suivi', { ascending: false })
+          withTimeout(
+            supabase
+              .from('favoris')
+              .select('annonce_id, user_id')
+              .in('user_id', activityScope.userIds)
+              .in('annonce_id', annonceIds),
+            'favoris annonces'
+          ),
+          withTimeout(
+            supabase
+              .from('suivi_annonce')
+              .select('annonce_id, statut, user_id, note, date_suivi')
+              .in('user_id', activityScope.userIds)
+              .in('annonce_id', annonceIds)
+              .order('date_suivi', { ascending: false }),
+            'suivi annonces'
+          ),
         ]);
         if (requestId !== requestIdRef.current) return;
 
@@ -354,7 +566,16 @@ export const useAnnonces = (
   useEffect(() => {
     if (activityScope.loading) return;
     refresh();
-  }, [filters, sort, limit, options.ownerType, activityScope.loading, activityScope.userIds.join('|')]);
+  }, [
+    filters,
+    sort,
+    limit,
+    options.ownerType,
+    options.requireDepartments,
+    normalizeDepartments(options.departments).join('|'),
+    activityScope.loading,
+    activityScope.userIds.join('|'),
+  ]);
 
   return {
     annonces,
