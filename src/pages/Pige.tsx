@@ -364,7 +364,7 @@ const Pige: React.FC = () => {
           <div
             className={
               viewMode === 'grid'
-                ? 'grid grid-cols-1 gap-6 md:grid-cols-2 2xl:grid-cols-3'
+                ? 'grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'
                 : 'space-y-4'
             }
             data-gsap-reveal
