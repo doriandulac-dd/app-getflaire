@@ -20,7 +20,8 @@ const propertyTypes = [
 
 const statusOptions = [
   { value: 'favorite', label: 'Favoris', accent: 'text-red-700 bg-red-50 border-red-100' },
-  { value: 'to_call', label: 'A rappeler', accent: 'text-blue-700 bg-blue-50 border-blue-100' },
+  { value: 'to_call', label: 'A appeler', accent: 'text-orange-700 bg-orange-50 border-orange-100' },
+  { value: 'reminder', label: 'A rappeler', accent: 'text-blue-700 bg-blue-50 border-blue-100' },
   { value: 'called', label: 'Appeles', accent: 'text-green-700 bg-green-50 border-green-100' },
   { value: 'hidden', label: 'Masques', accent: 'text-slate-700 bg-slate-100 border-slate-200' },
 ];
@@ -136,6 +137,9 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
               Filtres et qualification
             </p>
             <h3 className="mt-2 text-xl font-semibold text-secondary-900">Affinez votre pige</h3>
+            <p className="mt-1 text-sm text-secondary-500">
+              La recherche rapide retrouve une annonce. Les filtres avancés affinent ensuite votre périmètre.
+            </p>
           </div>
 
           <div className="flex items-center gap-2">
@@ -162,7 +166,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-400" />
               <input
                 type="text"
-                placeholder="Titre, description, ville..."
+                placeholder="Titre, description, ville, telephone, source..."
                 value={filters.search || ''}
                 onChange={(e) => handleFilterChange('search', e.target.value || undefined)}
                 className="h-12 w-full rounded-2xl border border-gray-200 bg-white pl-11 pr-4 text-sm shadow-sm focus:border-primary-400 focus:ring-primary-500"
@@ -387,6 +391,53 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
               </div>
 
               <div>
+                <p className="mb-3 text-sm font-semibold text-secondary-900">Localisation</p>
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Code postal"
+                    value={filters.postal_code || ''}
+                    onChange={(e) => handleFilterChange('postal_code', e.target.value || undefined)}
+                    className="h-11 w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
+                  />
+                  <input
+                    type="text"
+                    placeholder="Departement"
+                    value={filters.department || ''}
+                    onChange={(e) => handleFilterChange('department', e.target.value || undefined)}
+                    className="h-11 w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-3 text-sm font-semibold text-secondary-900">Source et date</p>
+                <div className="space-y-3">
+                  <input
+                    type="text"
+                    placeholder="Source"
+                    value={filters.source || ''}
+                    onChange={(e) => handleFilterChange('source', e.target.value || undefined)}
+                    className="h-11 w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="date"
+                      value={filters.date_from || ''}
+                      onChange={(e) => handleFilterChange('date_from', e.target.value || undefined)}
+                      className="h-11 w-full rounded-2xl border border-gray-200 bg-white px-3 text-sm focus:border-primary-400 focus:ring-primary-500"
+                    />
+                    <input
+                      type="date"
+                      value={filters.date_to || ''}
+                      onChange={(e) => handleFilterChange('date_to', e.target.value || undefined)}
+                      className="h-11 w-full rounded-2xl border border-gray-200 bg-white px-3 text-sm focus:border-primary-400 focus:ring-primary-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
                 <p className="mb-3 text-sm font-semibold text-secondary-900">Visibilite</p>
                 <label className="flex items-center gap-2 text-sm text-secondary-700">
                   <input
@@ -396,6 +447,24 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
                     className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
                   En ligne uniquement
+                </label>
+                <label className="mt-3 flex items-center gap-2 text-sm text-secondary-700">
+                  <input
+                    type="checkbox"
+                    checked={filters.recent_only || false}
+                    onChange={(e) => handleFilterChange('recent_only', e.target.checked || undefined)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  Annonces recentes
+                </label>
+                <label className="mt-3 flex items-center gap-2 text-sm text-secondary-700">
+                  <input
+                    type="checkbox"
+                    checked={filters.new_only || false}
+                    onChange={(e) => handleFilterChange('new_only', e.target.checked || undefined)}
+                    className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  Nouvelles annonces
                 </label>
               </div>
 

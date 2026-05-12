@@ -98,7 +98,7 @@ export interface AnnonceStatus {
   id: string;
   annonce_id: string;
   user_id: string;
-  status: 'favorite' | 'to_process' | 'to_call' | 'called' | 'hidden';
+  status: 'favorite' | 'to_call' | 'called' | 'reminder' | 'hidden';
   notes?: string;
   created_at: string;
 }
@@ -167,9 +167,16 @@ export interface PropertyFilters {
   surface_max?: number;
   rooms_min?: number;
   cities?: string[];
+  postal_code?: string;
+  department?: string;
+  source?: string;
+  date_from?: string;
+  date_to?: string;
   urgency_levels?: string[];
   status?: string[];
   urgent_only?: boolean;
+  recent_only?: boolean;
+  new_only?: boolean;
   has_phone?: boolean;
   online_status?: boolean;
   non_processed?: boolean;

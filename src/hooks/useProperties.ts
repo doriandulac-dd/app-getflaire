@@ -148,6 +148,23 @@ const matchesPropertyTypeFilter = (annonce: Annonce, selectedTypes?: string[]) =
   });
 };
 
+const normalizeActivityStatus = (status?: string | null) => {
+  if (status === 'to_process') return 'to_call';
+  if (status === 'to_call') return 'reminder';
+  return status || '';
+};
+
+const legacyStatusForFilter = (status: string) => {
+  if (status === 'to_call') return 'to_process';
+  if (status === 'reminder') return 'to_call';
+  return status;
+};
+
+const isMissingActivityTableError = (error: { code?: string; message?: string }) => {
+  const message = error.message || '';
+  return error.code === '42P01' || message.includes('pige_actions') || message.includes('Could not find the table');
+};
+
 type UseAnnoncesOptions = {
   ownerType?: string;
   departments?: string[];
@@ -198,6 +215,15 @@ const matchesDepartmentScope = (annonce: Annonce, departments?: string[]) => {
   return allowedDepartments.some(department =>
     department === annonceDepartment || department === postalDepartment
   );
+};
+
+const getStatusPriority = (annonce: Annonce) => {
+  if (annonce.favorite_user_ids?.length) return 0;
+  if (annonce.activity_status === 'to_call') return 1;
+  if (annonce.activity_status === 'reminder') return 2;
+  if (annonce.activity_status === 'called') return 3;
+  if (annonce.activity_status === 'hidden') return 5;
+  return 4;
 };
 
 const withTimeout = async <T>(promise: PromiseLike<T>, label: string): Promise<T> => {
@@ -254,7 +280,7 @@ export const useAnnonces = (
       let matchingStatusIds: string[] | null = null;
       let excludedProcessedIds: string[] = [];
       if (appUser && activityScope.userIds.length > 0 && !filters.include_all_statuses && (filters.status?.length || filters.non_processed)) {
-        const [allFavoritesResult, allSuiviResult] = await Promise.all([
+        const [allFavoritesResult, allSuiviResult, allActionsResult] = await Promise.all([
           withTimeout(
             supabase
               .from('favoris')
@@ -269,14 +295,28 @@ export const useAnnonces = (
               .in('user_id', activityScope.userIds),
             'suivi'
           ),
+          withTimeout(
+            supabase
+              .from('pige_actions')
+              .select('annonce_id, action_type')
+              .eq('active', true)
+              .in('user_id', activityScope.userIds),
+            'actions pige'
+          ),
         ]);
 
         if (allFavoritesResult.error) throw allFavoritesResult.error;
         if (allSuiviResult.error) throw allSuiviResult.error;
+        if (allActionsResult.error && !isMissingActivityTableError(allActionsResult.error)) throw allActionsResult.error;
         if (requestId !== requestIdRef.current) return;
 
         const favoriteIds = new Set(allFavoritesResult.data?.map(item => item.annonce_id) || []);
-        const suiviRows = allSuiviResult.data || [];
+        const suiviRows = allActionsResult.error
+          ? (allSuiviResult.data || []).map(row => ({ annonce_id: row.annonce_id, statut: normalizeActivityStatus(row.statut) }))
+          : [
+              ...(allActionsResult.data || []).map(row => ({ annonce_id: row.annonce_id, statut: row.action_type })),
+              ...(allSuiviResult.data || []).map(row => ({ annonce_id: row.annonce_id, statut: normalizeActivityStatus(row.statut) })),
+            ];
         const suiviIds = new Set(suiviRows.map(item => item.annonce_id));
 
         if (filters.status?.length) {
@@ -286,7 +326,7 @@ export const useAnnonces = (
               favoriteIds.forEach(id => matchingIds.add(id));
             } else {
               suiviRows
-                .filter(row => row.statut === status)
+                .filter(row => row.statut === status || legacyStatusForFilter(status) === row.statut)
                 .forEach(row => matchingIds.add(row.annonce_id));
             }
           });
@@ -303,7 +343,7 @@ export const useAnnonces = (
         let scopedQuery: any = baseQuery;
 
         if (filters.search) {
-          scopedQuery = scopedQuery.or(`title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,city.ilike.%${filters.search}%`);
+          scopedQuery = scopedQuery.or(`title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,city.ilike.%${filters.search}%,phone.ilike.%${filters.search}%,source.ilike.%${filters.search}%`);
         }
 
         if (filters.property_types?.length && !filters.property_types.includes('Autre')) {
@@ -317,6 +357,42 @@ export const useAnnonces = (
 
         if (filters.cities?.length) {
           scopedQuery = scopedQuery.or(filters.cities.map(city => `city.ilike.%${city}%`).join(','));
+        }
+
+        if (filters.postal_code) {
+          scopedQuery = scopedQuery.like('postal_code', `${filters.postal_code}%`);
+        }
+
+        if (filters.department) {
+          const department = normalizeDepartment(filters.department);
+          if (department) {
+            const postalPrefix = department === '2A' || department === '2B' ? '20' : department;
+            scopedQuery = scopedQuery.or(`departement.eq.${department},postal_code.like.${postalPrefix}%`);
+          }
+        }
+
+        if (filters.source) {
+          scopedQuery = scopedQuery.ilike('source', `%${filters.source}%`);
+        }
+
+        if (filters.date_from) {
+          scopedQuery = scopedQuery.gte('publication_date', filters.date_from);
+        }
+
+        if (filters.date_to) {
+          scopedQuery = scopedQuery.lte('publication_date', filters.date_to);
+        }
+
+        if (filters.recent_only) {
+          const recentDate = new Date();
+          recentDate.setDate(recentDate.getDate() - 7);
+          scopedQuery = scopedQuery.gte('publication_date', recentDate.toISOString());
+        }
+
+        if (filters.new_only) {
+          const newDate = new Date();
+          newDate.setDate(newDate.getDate() - 2);
+          scopedQuery = scopedQuery.gte('created_at', newDate.toISOString());
         }
 
         if (filters.price_min !== undefined) {
@@ -436,7 +512,7 @@ export const useAnnonces = (
 
       // Fetch user statuses for all annonces (for filtering)
       let userFavoritedIds: Set<string> = new Set();
-      let userSuiviStatusMap: Map<string, string> = new Map();
+      let userSuiviStatusMap: Map<string, string[]> = new Map();
       let userSuiviMetaMap: Map<string, { user_id: string; note?: string; date_suivi?: string }> = new Map();
       let favoriteUserIdsMap: Map<string, string[]> = new Map();
       let favoriteActorsMap: Map<string, string[]> = new Map();
@@ -445,7 +521,7 @@ export const useAnnonces = (
         const annonceIds = newAnnonces.map(a => a.id);
         
         // Fetch all user favorites and statuses
-        const [favoritesResult, suiviResult] = await Promise.all([
+        const [favoritesResult, suiviResult, actionsResult] = await Promise.all([
           withTimeout(
             supabase
               .from('favoris')
@@ -463,7 +539,20 @@ export const useAnnonces = (
               .order('date_suivi', { ascending: false }),
             'suivi annonces'
           ),
+          withTimeout(
+            supabase
+              .from('pige_actions')
+              .select('annonce_id, action_type, user_id, note, scheduled_at, updated_at')
+              .eq('active', true)
+              .in('user_id', activityScope.userIds)
+              .in('annonce_id', annonceIds)
+              .order('updated_at', { ascending: false }),
+            'actions pige annonces'
+          ),
         ]);
+        if (favoritesResult.error) throw favoritesResult.error;
+        if (suiviResult.error) throw suiviResult.error;
+        if (actionsResult.error && !isMissingActivityTableError(actionsResult.error)) throw actionsResult.error;
         if (requestId !== requestIdRef.current) return;
 
         // Build data structures for quick lookup
@@ -481,22 +570,53 @@ export const useAnnonces = (
           return map;
         }, new Map<string, string[]>());
 
-        (suiviResult.data || []).forEach(suivi => {
-          if (userSuiviStatusMap.has(suivi.annonce_id)) return;
-          userSuiviStatusMap.set(suivi.annonce_id, suivi.statut);
-          userSuiviMetaMap.set(suivi.annonce_id, {
-            user_id: suivi.user_id,
-            note: suivi.note,
-            date_suivi: suivi.date_suivi,
-          });
+        const activityRows = actionsResult.error
+          ? (suiviResult.data || []).map(suivi => ({
+              annonce_id: suivi.annonce_id,
+              statut: normalizeActivityStatus(suivi.statut),
+              user_id: suivi.user_id,
+              note: suivi.note,
+              date_suivi: suivi.date_suivi,
+            }))
+          : [
+              ...(actionsResult.data || []).map(action => ({
+                annonce_id: action.annonce_id,
+                statut: action.action_type,
+                user_id: action.user_id,
+                note: action.note,
+                date_suivi: action.scheduled_at || action.updated_at,
+              })),
+              ...(suiviResult.data || []).map(suivi => ({
+                annonce_id: suivi.annonce_id,
+                statut: normalizeActivityStatus(suivi.statut),
+                user_id: suivi.user_id,
+                note: suivi.note,
+                date_suivi: suivi.date_suivi,
+              })),
+            ];
+
+        activityRows.forEach(suivi => {
+          const statuses = userSuiviStatusMap.get(suivi.annonce_id) || [];
+          if (!statuses.includes(suivi.statut)) {
+            statuses.push(suivi.statut);
+            userSuiviStatusMap.set(suivi.annonce_id, statuses);
+          }
+
+          if (!userSuiviMetaMap.has(suivi.annonce_id)) {
+            userSuiviMetaMap.set(suivi.annonce_id, {
+              user_id: suivi.user_id,
+              note: suivi.note,
+              date_suivi: suivi.date_suivi,
+            });
+          }
         });
       }
 
       // Exclude hidden annonces by default (unless explicitly showing hidden or include_all_statuses is true)
       if (appUser && (!filters.status?.includes('hidden')) && !filters.include_all_statuses) {
         newAnnonces = newAnnonces.filter(annonce => {
-          const status = userSuiviStatusMap.get(annonce.id);
-          return status !== 'hidden';
+          const statuses = userSuiviStatusMap.get(annonce.id) || [];
+          return !statuses.includes('hidden');
         });
       }
 
@@ -508,7 +628,7 @@ export const useAnnonces = (
             if (status === 'favorite') {
               return userFavoritedIds.has(annonce.id);
             } else {
-              return userSuiviStatusMap.get(annonce.id) === status;
+              return (userSuiviStatusMap.get(annonce.id) || []).includes(status);
             }
           });
         });
@@ -519,7 +639,7 @@ export const useAnnonces = (
         // Keep only annonces that are NOT in the processed list
         newAnnonces = newAnnonces.filter(annonce => {
           const isFavorited = userFavoritedIds.has(annonce.id);
-          const hasStatus = userSuiviStatusMap.has(annonce.id);
+          const hasStatus = (userSuiviStatusMap.get(annonce.id) || []).length > 0;
           return !isFavorited && !hasStatus;
         });
       }
@@ -540,7 +660,7 @@ export const useAnnonces = (
         const favoriteActors = favoriteActorsMap.get(annonce.id) || [];
         return {
           ...annonce,
-          activity_status: userSuiviStatusMap.get(annonce.id),
+          activity_status: (userSuiviStatusMap.get(annonce.id) || [])[0],
           activity_user_id: suiviMeta?.user_id,
           activity_actor: suiviMeta ? activityScope.formatActor(suiviMeta.user_id) : undefined,
           activity_note: suiviMeta?.note,
@@ -549,6 +669,23 @@ export const useAnnonces = (
           favorite_actors: favoriteActors.length ? favoriteActors : undefined,
         };
       });
+
+      if (sort.field === 'status') {
+        newAnnonces = [...newAnnonces].sort((a, b) => {
+          const priorityDiff = getStatusPriority(a) - getStatusPriority(b);
+          if (priorityDiff !== 0) return priorityDiff;
+          return new Date(b.publication_date || b.created_at).getTime() - new Date(a.publication_date || a.created_at).getTime();
+        });
+      }
+
+      if (sort.field === 'non_processed') {
+        newAnnonces = [...newAnnonces].sort((a, b) => {
+          const aProcessed = Boolean(a.activity_status || a.favorite_user_ids?.length);
+          const bProcessed = Boolean(b.activity_status || b.favorite_user_ids?.length);
+          if (aProcessed !== bProcessed) return aProcessed ? 1 : -1;
+          return new Date(b.publication_date || b.created_at).getTime() - new Date(a.publication_date || a.created_at).getTime();
+        });
+      }
 
       if (requestId !== requestIdRef.current) return;
 

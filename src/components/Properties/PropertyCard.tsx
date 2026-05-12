@@ -19,7 +19,7 @@ import { useSurveillance } from '../../hooks/useSurveillance';
 import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
 import { deletePropertyFavorite, fetchPropertyFavorites, savePropertyFavorite } from '../../utils/propertyFavorites';
-import { deletePropertyStatus, fetchPropertyStatus, savePropertyStatus } from '../../utils/propertyStatus';
+import { deletePropertyAction, fetchPropertyActivity, savePropertyAction } from '../../utils/propertyActivities';
 
 interface PropertyCardProps {
   annonce: Annonce;
@@ -42,15 +42,16 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
   const navigate = useNavigate();
   const [currentStatus, setCurrentStatus] = useState({
     favorite: false,
-    to_process: false,
     to_call: false,
     called: false,
+    reminder: false,
     hidden: false,
+    viewed: false,
   });
   const [statusActor, setStatusActor] = useState<string | null>(annonce.activity_actor || null);
   const [favoriteActors, setFavoriteActors] = useState<string[]>(annonce.favorite_actors || []);
-  const [currentSuiviId, setCurrentSuiviId] = useState<string | null>(null);
   const [currentOwnFavoriteId, setCurrentOwnFavoriteId] = useState<string | null>(null);
+  const [nextActionAt, setNextActionAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [isUnderSurveillance, setIsUnderSurveillance] = useState(false);
 
@@ -140,7 +141,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
     if (!appUser) return;
 
     try {
-      const suiviData = await fetchPropertyStatus({
+      const activityData = await fetchPropertyActivity({
         annonceId: annonce.id,
         userId: appUser.id,
         activityScope,
@@ -153,18 +154,19 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
       });
 
       const ownFavorite = favoriteData?.find(favorite => favorite.user_id === appUser.id) || null;
-      setCurrentSuiviId(suiviData?.id || null);
       setCurrentOwnFavoriteId(ownFavorite?.id || null);
-      setStatusActor(suiviData?.user_id ? activityScope.formatActor(suiviData.user_id) : null);
+      setStatusActor(activityData.statusActor ? activityScope.formatActor(activityData.statusActor) : null);
       setFavoriteActors((favoriteData || []).map(favorite => activityScope.formatActor(favorite.user_id)));
 
       setCurrentStatus({
         favorite: Boolean(favoriteData?.length),
-        to_process: suiviData?.statut === 'to_process',
-        to_call: suiviData?.statut === 'to_call',
-        called: suiviData?.statut === 'called',
-        hidden: suiviData?.statut === 'hidden',
+        to_call: activityData.to_call,
+        called: activityData.called,
+        reminder: activityData.reminder,
+        hidden: activityData.hidden,
+        viewed: activityData.viewed,
       });
+      setNextActionAt(activityData.reminderAt || activityData.rdvAt || null);
     } catch (error) {
       console.error('Error fetching status:', error);
     }
@@ -178,16 +180,16 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 border-transparent',
       label: 'Favori',
     },
-    to_process: {
+    to_call: {
       icon: Clock,
-      color: currentStatus.to_process
+      color: currentStatus.to_call
         ? 'text-orange-500 bg-orange-50 border-orange-100'
         : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 border-transparent',
-      label: 'A traiter',
+      label: 'A appeler',
     },
-    to_call: {
+    reminder: {
       icon: Phone,
-      color: currentStatus.to_call
+      color: currentStatus.reminder
         ? 'text-blue-500 bg-blue-50 border-blue-100'
         : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50 border-transparent',
       label: 'A rappeler',
@@ -235,20 +237,12 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
           toast.success('Ajoute aux favoris');
         }
       } else {
-        let statut = null;
-        if (statusKey === 'called') statut = 'called';
-        else if (statusKey === 'to_call') statut = 'to_call';
-        else if (statusKey === 'to_process') statut = 'to_process';
-        else if (statusKey === 'hidden') statut = 'hidden';
-
-        const data = await savePropertyStatus({
+        await savePropertyAction({
           annonceId: annonce.id,
           userId: appUser.id,
           activityScope,
-          statut,
+          actionType: statusKey as 'to_call' | 'called' | 'reminder' | 'hidden',
         });
-
-        setCurrentSuiviId(data.id);
         toast.success(`Statut mis a jour : ${statusConfig[statusKey].label}`);
       }
 
@@ -272,16 +266,13 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
       if (newStatus) {
         await handleStatusChange(statusKey);
       } else {
-        if (!currentSuiviId) {
-          await fetchCurrentStatus();
-          return;
-        }
         setLoading(true);
         try {
-          await deletePropertyStatus({
+          await deletePropertyAction({
             annonceId: annonce.id,
             userId: appUser.id,
             activityScope,
+            actionType: statusKey as 'to_call' | 'called' | 'reminder' | 'hidden',
           });
           await fetchCurrentStatus();
           toast.success('Statut supprime');
@@ -328,6 +319,19 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
   const isList = variant === 'list';
   const imageUrl = getImageUrl();
   const urgency = getUrgencyLevel();
+  const nextActionLabel = nextActionAt
+    ? new Intl.DateTimeFormat('fr-FR', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).format(new Date(nextActionAt))
+    : null;
+  const isNewAnnonce = (() => {
+    const detectedAt = new Date(annonce.created_at || annonce.publication_date);
+    if (isNaN(detectedAt.getTime())) return false;
+    return Date.now() - detectedAt.getTime() <= 2 * 24 * 60 * 60 * 1000;
+  })();
 
   return (
     <div
@@ -389,6 +393,55 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                 >
                   {annonce.en_ligne === true ? 'En ligne' : 'Hors ligne'}
                 </span>
+                {isNewAnnonce && (
+                  <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
+                    Nouveau
+                  </span>
+                )}
+                {annonce.phone ? (
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                    Avec telephone
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                    Sans telephone
+                  </span>
+                )}
+                {annonce.maj_prix && (
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                    Baisse de prix
+                  </span>
+                )}
+                {Boolean(annonce.nb_modifications) && annonce.nb_modifications > 0 && (
+                  <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-semibold text-violet-700">
+                    Modifie
+                  </span>
+                )}
+                {currentStatus.favorite && (
+                  <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                    Favori
+                  </span>
+                )}
+                {currentStatus.to_call && (
+                  <span className="rounded-full bg-orange-50 px-3 py-1 text-xs font-semibold text-orange-700">
+                    A appeler
+                  </span>
+                )}
+                {currentStatus.called && (
+                  <span className="rounded-full bg-green-50 px-3 py-1 text-xs font-semibold text-green-700">
+                    Deja contacte
+                  </span>
+                )}
+                {currentStatus.reminder && (
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                    A rappeler
+                  </span>
+                )}
+                {currentStatus.viewed && (
+                  <span className="rounded-full bg-secondary-100 px-3 py-1 text-xs font-semibold text-secondary-700">
+                    Deja vu
+                  </span>
+                )}
               </div>
 
               {!isList && (
@@ -451,8 +504,13 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
               </div>
               {(statusActor || favoriteActors.length > 0) && !showSurveillanceButton && (
                 <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-secondary-500">
-                  {statusActor && <span>Statut par {statusActor}</span>}
+                  {statusActor && <span>Derniere action par {statusActor}</span>}
                   {favoriteActors.length > 0 && <span>Favori par {favoriteActors.slice(0, 2).join(', ')}{favoriteActors.length > 2 ? ` +${favoriteActors.length - 2}` : ''}</span>}
+                </div>
+              )}
+              {nextActionLabel && !showSurveillanceButton && (
+                <div className="mt-2 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700">
+                  Prochaine action {currentStatus.reminder ? 'de rappel' : 'de suivi'} le {nextActionLabel}
                 </div>
               )}
             </div>

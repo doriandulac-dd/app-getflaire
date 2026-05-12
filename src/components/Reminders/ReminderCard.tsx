@@ -72,9 +72,9 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
 
   const typeConfig = useMemo(() => {
     switch (reminder.type) {
-      case 'to_process':
-        return { icon: Clock, label: 'À traiter', className: 'bg-orange-50 text-orange-700 ring-orange-200' };
       case 'to_call':
+        return { icon: Clock, label: 'À appeler', className: 'bg-orange-50 text-orange-700 ring-orange-200' };
+      case 'reminder':
         return { icon: Phone, label: 'À rappeler', className: 'bg-blue-50 text-blue-700 ring-blue-200' };
       case 'called':
         return { icon: CheckCircle, label: 'Appelé', className: 'bg-emerald-50 text-emerald-700 ring-emerald-200' };

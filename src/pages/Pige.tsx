@@ -46,6 +46,10 @@ const Pige: React.FC = () => {
     { field: 'price', direction: 'desc' as const, label: 'Prix decroissant' },
     { field: 'size', direction: 'desc' as const, label: 'Surface decroissante' },
     { field: 'city', direction: 'asc' as const, label: 'Ville A-Z' },
+    { field: 'source', direction: 'asc' as const, label: 'Source A-Z' },
+    { field: 'status', direction: 'asc' as const, label: 'Statuts prioritaires' },
+    { field: 'non_processed', direction: 'asc' as const, label: 'Non traitees d abord' },
+    { field: 'created_at', direction: 'desc' as const, label: 'Dernieres ajoutees' },
   ];
 
   const activeFiltersCount = useMemo(
@@ -101,12 +105,21 @@ const Pige: React.FC = () => {
       onClick: () => setFilters((prev) => ({ ...prev, has_phone: prev.has_phone ? undefined : true })),
     },
     {
-      label: 'A rappeler',
+      label: 'A appeler',
       active: (filters.status || []).includes('to_call'),
       onClick: () =>
         setFilters((prev) => ({
           ...prev,
           status: (prev.status || []).includes('to_call') ? undefined : ['to_call'],
+        })),
+    },
+    {
+      label: 'A rappeler',
+      active: (filters.status || []).includes('reminder'),
+      onClick: () =>
+        setFilters((prev) => ({
+          ...prev,
+          status: (prev.status || []).includes('reminder') ? undefined : ['reminder'],
         })),
     },
     {

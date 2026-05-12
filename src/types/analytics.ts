@@ -46,7 +46,7 @@ export interface DonutData {
 
 export interface ActivityItem {
   id: string;
-  type: 'appel' | 'rappel' | 'annonce' | 'surveillance';
+  type: 'appel' | 'rappel' | 'favori' | 'annonce' | 'surveillance';
   description: string;
   timestamp: string;
   icon: string;

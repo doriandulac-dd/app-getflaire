@@ -7,7 +7,6 @@ import {
   Phone,
   RefreshCw,
   Sparkles,
-  Target,
   TimerReset,
 } from 'lucide-react';
 import { useGSAP } from '@gsap/react';
@@ -22,8 +21,8 @@ import LoadingSkeleton from '../components/UI/LoadingSkeleton';
 import { gsap } from '../lib/animations';
 
 const reminderTypeLabels: Record<ProcessedReminder['type'], string> = {
-  to_process: 'À traiter',
-  to_call: 'À rappeler',
+  to_call: 'À appeler',
+  reminder: 'À rappeler',
   called: 'Appelé',
   rdv: 'RDV',
 };
@@ -147,7 +146,7 @@ const Reminders: React.FC = () => {
           acc[reminder.type] += 1;
           return acc;
         },
-        { to_process: 0, to_call: 0, called: 0, rdv: 0 }
+        { to_call: 0, reminder: 0, called: 0, rdv: 0 }
       ),
     [reminders]
   );
@@ -255,8 +254,8 @@ const Reminders: React.FC = () => {
 
           <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
-              { type: 'to_process' as const, icon: Target },
               { type: 'to_call' as const, icon: Phone },
+              { type: 'reminder' as const, icon: TimerReset },
               { type: 'called' as const, icon: CheckCircle },
               { type: 'rdv' as const, icon: Calendar },
             ].map((item) => {

@@ -5,6 +5,21 @@ import { useActivityScope } from './useActivityScope';
 import { ReminderFromSuivi, ReminderFilters, ProcessedReminder } from '../types/reminder';
 import toast from 'react-hot-toast';
 
+const isMissingActivityTableError = (error: { code?: string; message?: string }) =>
+  error.code === '42P01' || (error.message || '').includes('pige_actions');
+
+const applyReminderScope = (query: any, activityScope: ReturnType<typeof useActivityScope>, userId?: string) => {
+  if (activityScope.isAgencyScope && activityScope.agencyId) {
+    return query.eq('agency_id', activityScope.agencyId);
+  }
+
+  if (activityScope.userIds.length > 0) {
+    return query.in('user_id', activityScope.userIds);
+  }
+
+  return userId ? query.eq('user_id', userId) : query;
+};
+
 export const useReminders = (filters: ReminderFilters = {}) => {
   const { appUser } = useAuth();
   const activityScope = useActivityScope();
@@ -23,15 +38,16 @@ export const useReminders = (filters: ReminderFilters = {}) => {
       setError(null);
 
       let query = supabase
-        .from('suivi_annonce')
+        .from('pige_actions')
         .select(`
           id,
           user_id,
           agency_id,
           annonce_id,
-          statut,
+          action_type,
           note,
-          date_suivi,
+          scheduled_at,
+          updated_at,
           annonces!inner(
             id,
             title,
@@ -43,13 +59,15 @@ export const useReminders = (filters: ReminderFilters = {}) => {
             image_urls
           )
         `)
-        .in('user_id', activityScope.userIds)
-        .in('statut', ['to_process', 'to_call', 'called', 'rdv'])
-        .order('date_suivi', { ascending: false });
+        .eq('active', true)
+        .in('action_type', ['to_call', 'reminder', 'called', 'rdv'])
+        .order('updated_at', { ascending: false });
+
+      query = applyReminderScope(query, activityScope, appUser.id);
 
       // Apply filters
       if (filters.type) {
-        query = query.eq('statut', filters.type);
+        query = query.eq('action_type', filters.type);
       }
 
       if (filters.period) {
@@ -59,28 +77,70 @@ export const useReminders = (filters: ReminderFilters = {}) => {
         switch (filters.period) {
           case 'today':
             dateFrom = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            query = query.gte('date_suivi', dateFrom.toISOString());
+            query = query.gte('scheduled_at', dateFrom.toISOString());
             break;
           case 'week':
             dateFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            query = query.gte('date_suivi', dateFrom.toISOString());
+            query = query.gte('scheduled_at', dateFrom.toISOString());
             break;
           case 'month':
             dateFrom = new Date(now.getFullYear(), now.getMonth(), 1);
-            query = query.gte('date_suivi', dateFrom.toISOString());
+            query = query.gte('scheduled_at', dateFrom.toISOString());
             break;
         }
       }
 
       if (filters.date_from) {
-        query = query.gte('date_suivi', filters.date_from);
+        query = query.gte('scheduled_at', filters.date_from);
       }
 
       if (filters.date_to) {
-        query = query.lte('date_suivi', filters.date_to);
+        query = query.lte('scheduled_at', filters.date_to);
       }
 
-      const { data, error: queryError } = await query;
+      let { data, error: queryError } = await query;
+
+      if (queryError && (queryError.code === '42P01' || (queryError.message || '').includes('pige_actions'))) {
+        let legacyQuery = supabase
+          .from('suivi_annonce')
+          .select(`
+            id,
+            user_id,
+            agency_id,
+            annonce_id,
+            statut,
+            note,
+            date_suivi,
+            annonces!inner(
+              id,
+              title,
+              price,
+              city,
+              postal_code,
+              type_de_bien,
+              url,
+              image_urls
+            )
+          `)
+          .in('statut', ['to_process', 'to_call', 'called', 'rdv'])
+          .order('date_suivi', { ascending: false });
+
+        legacyQuery = applyReminderScope(legacyQuery, activityScope, appUser.id);
+
+        if (filters.type) {
+          const legacyType = filters.type === 'to_call' ? 'to_process' : filters.type === 'reminder' ? 'to_call' : filters.type;
+          legacyQuery = legacyQuery.eq('statut', legacyType);
+        }
+
+        const legacyResult = await legacyQuery;
+        data = legacyResult.data?.map((item: any) => ({
+          ...item,
+          action_type: item.statut === 'to_process' ? 'to_call' : item.statut === 'to_call' ? 'reminder' : item.statut,
+          scheduled_at: item.date_suivi,
+          updated_at: item.date_suivi,
+        }));
+        queryError = legacyResult.error;
+      }
 
       if (queryError) throw queryError;
 
@@ -92,10 +152,10 @@ export const useReminders = (filters: ReminderFilters = {}) => {
             user_id: item.user_id,
             actor_name: activityScope.formatActor(item.user_id),
             is_own_action: activityScope.isOwnAction(item.user_id),
-            type: item.statut,
-            title: getReminderTitle(item.statut, item.annonces?.title),
-            scheduled_date: item.date_suivi,
-            status: getReminderStatus(item.statut, item.date_suivi),
+            type: item.action_type,
+            title: getReminderTitle(item.action_type, item.annonces?.title),
+            scheduled_date: item.scheduled_at || item.updated_at,
+            status: getReminderStatus(item.action_type, item.scheduled_at || item.updated_at),
             annonce_title: item.annonces?.title || 'Annonce supprimée',
             annonce_id: item.annonce_id,
             annonce_url: item.annonces?.url || '',
@@ -141,8 +201,9 @@ export const useReminders = (filters: ReminderFilters = {}) => {
     const shortTitle = annonceTitle ? annonceTitle.substring(0, 50) + '...' : 'Annonce';
     switch (type) {
       case 'to_process':
-        return `À traiter : ${shortTitle}`;
       case 'to_call':
+        return `À appeler : ${shortTitle}`;
+      case 'reminder':
         return `À rappeler : ${shortTitle}`;
       case 'called':
         return `Appelé : ${shortTitle}`;
@@ -161,7 +222,7 @@ export const useReminders = (filters: ReminderFilters = {}) => {
     const reminderDate = new Date(dateString);
     const now = new Date();
 
-    if (type === 'to_call' || type === 'rdv') {
+    if (type === 'reminder' || type === 'rdv') {
       // Pour les rappels et RDV, vérifier si la date est passée
       if (reminderDate < now) {
         return 'overdue';
@@ -174,16 +235,33 @@ export const useReminders = (filters: ReminderFilters = {}) => {
   const updateReminder = async (id: string, updates: Partial<ReminderFromSuivi>) => {
     try {
       const { error } = await supabase
-        .from('suivi_annonce')
+        .from('pige_actions')
         .update({
-          ...updates,
+          action_type: updates.statut,
+          note: updates.note,
+          scheduled_at: updates.date_suivi,
           user_id: appUser?.id,
           agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
+          updated_at: new Date().toISOString(),
         })
-        .eq('id', id)
-        .in('user_id', activityScope.userIds);
+        .eq('id', id);
 
-      if (error) throw error;
+      if (error) {
+        if (isMissingActivityTableError(error)) {
+          const { error: legacyError } = await supabase
+            .from('suivi_annonce')
+            .update({
+              ...updates,
+              user_id: appUser?.id,
+              agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
+            })
+            .eq('id', id)
+            .in('user_id', activityScope.userIds);
+          if (legacyError) throw legacyError;
+        } else {
+          throw error;
+        }
+      }
 
       toast.success('Rappel mis à jour');
       fetchReminders();
@@ -198,12 +276,22 @@ export const useReminders = (filters: ReminderFilters = {}) => {
   const deleteReminder = async (id: string) => {
     try {
       const { error } = await supabase
-        .from('suivi_annonce')
-        .delete()
-        .eq('id', id)
-        .in('user_id', activityScope.userIds);
+        .from('pige_actions')
+        .update({ active: false, user_id: appUser?.id, updated_at: new Date().toISOString() })
+        .eq('id', id);
 
-      if (error) throw error;
+      if (error) {
+        if (isMissingActivityTableError(error)) {
+          const { error: legacyError } = await supabase
+            .from('suivi_annonce')
+            .delete()
+            .eq('id', id)
+            .in('user_id', activityScope.userIds);
+          if (legacyError) throw legacyError;
+        } else {
+          throw error;
+        }
+      }
 
       toast.success('Rappel supprimé');
       fetchReminders();
@@ -218,17 +306,33 @@ export const useReminders = (filters: ReminderFilters = {}) => {
   const markAsCompleted = async (id: string) => {
     try {
       const { error } = await supabase
-        .from('suivi_annonce')
+        .from('pige_actions')
         .update({ 
           user_id: appUser?.id,
           agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
-          statut: 'called',
-          date_suivi: new Date().toISOString()
+          action_type: 'called',
+          scheduled_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         })
-        .eq('id', id)
-        .in('user_id', activityScope.userIds);
+        .eq('id', id);
 
-      if (error) throw error;
+      if (error) {
+        if (isMissingActivityTableError(error)) {
+          const { error: legacyError } = await supabase
+            .from('suivi_annonce')
+            .update({
+              user_id: appUser?.id,
+              agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
+              statut: 'called',
+              date_suivi: new Date().toISOString()
+            })
+            .eq('id', id)
+            .in('user_id', activityScope.userIds);
+          if (legacyError) throw legacyError;
+        } else {
+          throw error;
+        }
+      }
 
       toast.success('Rappel marqué comme terminé');
       fetchReminders();

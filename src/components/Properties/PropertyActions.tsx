@@ -1,17 +1,30 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, Clock, Phone, CheckCircle, Calendar, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { Heart, Clock, Phone, CheckCircle, Calendar, Pencil, Trash2, X, MessageSquare } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
-import { deletePropertyFavorite, fetchPropertyFavorites, savePropertyFavorite } from '../../utils/propertyFavorites';
-import { deletePropertyStatus, fetchPropertyStatus, savePropertyStatus } from '../../utils/propertyStatus';
+import {
+  deletePropertyFavorite,
+  fetchPropertyFavorites,
+  savePropertyFavorite,
+  type PropertyFavoriteRow,
+} from '../../utils/propertyFavorites';
+import {
+  deletePropertyNote,
+  deletePropertyAction,
+  fetchPropertyActivity,
+  savePropertyAction,
+  savePropertyNote,
+  updatePropertyNote,
+  type PropertyActionRow,
+  type PropertyNoteRow,
+} from '../../utils/propertyActivities';
 
 interface PropertyStatus {
   favorite: boolean;
-  to_process: boolean;
   to_call: boolean;
   called: boolean;
+  reminder: boolean;
   rdv: boolean;
   call_date?: string;
   reminder_date?: string;
@@ -31,9 +44,9 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
   annonceId,
   initialStatus = {
     favorite: false,
-    to_process: false,
     to_call: false,
     called: false,
+    reminder: false,
     rdv: false,
   },
   initialComment = '',
@@ -45,50 +58,51 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
   const [comment, setComment] = useState(initialComment);
   const [statusActor, setStatusActor] = useState<string | null>(null);
   const [favoriteActors, setFavoriteActors] = useState<string[]>([]);
+  const [favoriteRows, setFavoriteRows] = useState<PropertyFavoriteRow[]>([]);
+  const [activityRows, setActivityRows] = useState<PropertyActionRow[]>([]);
+  const [notes, setNotes] = useState<PropertyNoteRow[]>([]);
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [reminderDate, setReminderDate] = useState('');
   const [reminderTime, setReminderTime] = useState('');
   const [showRdvModal, setShowRdvModal] = useState(false);
   const [rdvDate, setRdvDate] = useState('');
   const [rdvTime, setRdvTime] = useState('');
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentFavoriteId, setCurrentFavoriteId] = useState<string | null>(null);
 
   useEffect(() => {
     if (activityScope.loading) return;
-    fetchCurrentStatus();
+    fetchCurrentActivity();
     fetchFavoriteStatus();
   }, [annonceId, appUser, activityScope.loading, activityScope.userIds.join('|')]);
 
-  const fetchCurrentStatus = async () => {
+  const fetchCurrentActivity = async () => {
     if (!appUser) return;
 
     try {
-      const data = await fetchPropertyStatus({
+      const data = await fetchPropertyActivity({
         annonceId,
         userId: appUser.id,
         activityScope,
       });
 
-      if (data) {
-        setStatusActor(activityScope.formatActor(data.user_id));
-        const newStatus: PropertyStatus = {
-          favorite: false, // Will be set by fetchFavoriteStatus
-          to_process: data.statut === 'to_process',
-          to_call: data.statut === 'to_call',
-          called: data.statut === 'called',
-          rdv: data.statut === 'rdv',
-          call_date: data.statut === 'called' ? data.date_suivi : undefined,
-          reminder_date: data.statut === 'to_call' ? data.date_suivi : undefined,
-          rdv_date: data.statut === 'rdv' ? data.date_suivi : undefined,
-        };
-        setStatus(newStatus);
-        setComment(data.note || '');
-      } else {
-        setStatusActor(null);
-      }
+      setStatusActor(data.statusActor ? activityScope.formatActor(data.statusActor) : null);
+      setActivityRows(data.actions);
+      setNotes(data.notes);
+      setComment('');
+      setStatus(prev => ({
+        ...prev,
+        to_call: data.to_call,
+        called: data.called,
+        reminder: data.reminder,
+        rdv: data.rdv,
+        call_date: data.calledAt || undefined,
+        reminder_date: data.reminderAt || undefined,
+        rdv_date: data.rdvAt || undefined,
+      }));
     } catch (error) {
-      console.error('Error fetching status:', error);
+      console.error('Error fetching activity:', error);
     }
   };
 
@@ -102,6 +116,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         activityScope,
       });
 
+      setFavoriteRows(data || []);
       const ownFavorite = data?.find(favorite => favorite.user_id === appUser.id) || null;
       setFavoriteActors((data || []).map(favorite => activityScope.formatActor(favorite.user_id)));
       if (data?.length) {
@@ -146,47 +161,33 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
     }
   };
 
-  const updateStatus = async (newStatus: PropertyStatus, newComment: string = comment) => {
+  const toggleAction = async (
+    action: 'to_call' | 'called' | 'reminder' | 'rdv',
+    enabled: boolean,
+    scheduledAt?: string
+  ) => {
     if (!appUser) return;
 
     setLoading(true);
     try {
-      // Determine the main status
-      let mainStatus = null;
-      if (newStatus.called) mainStatus = 'called';
-      else if (newStatus.rdv) mainStatus = 'rdv';
-      else if (newStatus.to_call) mainStatus = 'to_call';
-      else if (newStatus.to_process) mainStatus = 'to_process';
-
-      let dateSuivi = new Date().toISOString();
-      // Add specific dates
-      if (newStatus.called && !status.called) {
-        dateSuivi = new Date().toISOString();
-      } else if (newStatus.to_call && newStatus.reminder_date) {
-        dateSuivi = newStatus.reminder_date;
-      } else if (newStatus.rdv && newStatus.rdv_date) {
-        dateSuivi = newStatus.rdv_date;
-      }
-
-      if (!mainStatus) {
-        await deletePropertyStatus({ annonceId, userId: appUser.id, activityScope });
-        setStatusActor(null);
-      } else {
-        const data = await savePropertyStatus({
+      if (enabled) {
+        await savePropertyAction({
           annonceId,
           userId: appUser.id,
           activityScope,
-          statut: mainStatus,
-          note: newComment,
-          dateSuivi,
+          actionType: action,
+          scheduledAt: scheduledAt || (action === 'called' ? new Date().toISOString() : undefined),
         });
-
-        setStatusActor(activityScope.formatActor(data.user_id));
+      } else {
+        await deletePropertyAction({
+          annonceId,
+          userId: appUser.id,
+          activityScope,
+          actionType: action,
+        });
       }
-      setStatus(newStatus);
-      setComment(newComment);
-      onUpdate?.(newStatus, newComment);
-      toast.success('Statut mis à jour');
+      await fetchCurrentActivity();
+      toast.success('Action mise à jour');
     } catch (error) {
       console.error('[status-update] actions update failed', error);
       toast.error('Erreur lors de la mise à jour');
@@ -196,50 +197,37 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
   };
 
   const handleToggle = (action: keyof PropertyStatus) => {
-    const newStatus = { ...status };
-    
     if (action === 'favorite') {
       toggleFavorite();
       return;
-    } else if (action === 'called' && !status.called) {
-      // When marking as called, record current timestamp
-      newStatus.called = true;
-      newStatus.call_date = new Date().toISOString();
-      // Reset other statuses
-      newStatus.to_process = false;
-      newStatus.to_call = false;
-    } else if (action === 'called' && status.called) {
-      // Remove called status
-      newStatus.called = false;
-      newStatus.call_date = undefined;
-    } else if (action === 'to_call') {
-      if (!status.to_call) {
+    }
+
+    if (action === 'called') {
+      toggleAction('called', !status.called);
+      return;
+    }
+
+    if (action === 'to_call') {
+      toggleAction('to_call', !status.to_call);
+      return;
+    }
+
+    if (action === 'reminder') {
+      if (!status.reminder) {
         setShowReminderModal(true);
         return;
-      } else {
-        newStatus.to_call = false;
-        newStatus.reminder_date = undefined;
-        newStatus.reminder_time = undefined;
       }
-    } else if (action === 'rdv') {
+      toggleAction('reminder', false);
+      return;
+    }
+
+    if (action === 'rdv') {
       if (!status.rdv) {
         setShowRdvModal(true);
         return;
-      } else {
-        newStatus.rdv = false;
-        newStatus.rdv_date = undefined;
-        newStatus.rdv_time = undefined;
       }
-    } else if (action === 'to_process') {
-      newStatus.to_process = !status.to_process;
-      if (newStatus.to_process) {
-        newStatus.called = false;
-        newStatus.to_call = false;
-        newStatus.rdv = false;
-      }
+      toggleAction('rdv', false);
     }
-
-    updateStatus(newStatus);
   };
 
   const handleReminderSubmit = () => {
@@ -254,16 +242,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
     // Convertir en ISO string pour le stockage
     const isoDateTime = localDate.toISOString();
     
-    const newStatus = {
-      ...status,
-      to_call: true,
-      reminder_date: isoDateTime,
-      reminder_time: reminderTime,
-      to_process: false,
-      called: false,
-    };
-
-    updateStatus(newStatus);
+    toggleAction('reminder', true, isoDateTime);
     setShowReminderModal(false);
     setReminderDate('');
     setReminderTime('');
@@ -281,21 +260,135 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
     // Convertir en ISO string pour le stockage
     const isoDateTime = localDate.toISOString();
     
-    const newStatus = {
-      ...status,
-      rdv: true,
-      rdv_date: isoDateTime,
-      rdv_time: rdvTime,
-      to_process: false,
-      to_call: false,
-      called: false,
-    };
-
-    updateStatus(newStatus);
+    toggleAction('rdv', true, isoDateTime);
     setShowRdvModal(false);
     setRdvDate('');
     setRdvTime('');
   };
+
+  const handleSaveNote = async () => {
+    if (!appUser || !comment.trim()) return;
+
+    setLoading(true);
+    try {
+      if (editingNoteId) {
+        await updatePropertyNote({
+          noteId: editingNoteId,
+          annonceId,
+          userId: appUser.id,
+          activityScope,
+          content: comment,
+        });
+      } else {
+        await savePropertyNote({
+          annonceId,
+          userId: appUser.id,
+          activityScope,
+          content: comment,
+        });
+      }
+      setComment('');
+      setEditingNoteId(null);
+      await fetchCurrentActivity();
+      toast.success(editingNoteId ? 'Note mise à jour' : 'Note ajoutée');
+    } catch (error) {
+      console.error('[pige-activity] note save failed', error);
+      toast.error(editingNoteId ? 'Erreur lors de la mise à jour de la note' : 'Erreur lors de l’ajout de la note');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditNote = (note: PropertyNoteRow) => {
+    setEditingNoteId(note.id);
+    setComment(note.content);
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (!appUser) return;
+
+    setLoading(true);
+    try {
+      await deletePropertyNote({
+        noteId,
+        annonceId,
+        userId: appUser.id,
+        activityScope,
+      });
+      if (editingNoteId === noteId) {
+        setEditingNoteId(null);
+        setComment('');
+      }
+      await fetchCurrentActivity();
+      toast.success('Note supprimée');
+    } catch (error) {
+      console.error('[pige-activity] note delete failed', error);
+      toast.error('Erreur lors de la suppression de la note');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const cancelNoteEdition = () => {
+    setEditingNoteId(null);
+    setComment('');
+  };
+
+  const openReminderEdition = () => {
+    if (status.reminder_date) {
+      const reminderDateValue = new Date(status.reminder_date);
+      setReminderDate(reminderDateValue.toISOString().split('T')[0]);
+      setReminderTime(reminderDateValue.toTimeString().slice(0, 5));
+    }
+    setShowReminderModal(true);
+  };
+
+  const deleteReminder = () => {
+    toggleAction('reminder', false);
+  };
+
+  const buildTimeline = () => {
+    const favoritesTimeline = favoriteRows.map((favorite) => ({
+      id: `favorite-${favorite.id}`,
+      label: 'Favori ajouté',
+      actor: activityScope.formatActor(favorite.user_id),
+      date: favorite.date_favoris || null,
+      tone: 'text-red-700 bg-red-50 border-red-100',
+    }));
+
+    const actionsTimeline = activityRows.map((action) => {
+      const labelMap: Record<string, string> = {
+        to_call: 'Annonce marquée à appeler',
+        called: 'Annonce marquée appelée',
+        reminder: 'Rappel programmé',
+        rdv: 'RDV programmé',
+        hidden: 'Annonce masquée',
+        viewed: 'Annonce consultée',
+      };
+
+      return {
+        id: `action-${action.id}`,
+        label: labelMap[action.action_type] || action.action_type,
+        actor: activityScope.formatActor(action.user_id),
+        date: action.scheduled_at || action.updated_at || action.created_at || null,
+        tone: 'text-secondary-700 bg-secondary-50 border-secondary-100',
+      };
+    });
+
+    const notesTimeline = notes.map((note) => ({
+      id: `note-${note.id}`,
+      label: 'Note ajoutée',
+      actor: activityScope.formatActor(note.user_id),
+      date: note.updated_at || note.created_at || null,
+      tone: 'text-blue-700 bg-blue-50 border-blue-100',
+    }));
+
+    return [...favoritesTimeline, ...actionsTimeline, ...notesTimeline].sort((a, b) =>
+      new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime()
+    );
+  };
+
+  const timelineItems = buildTimeline().slice(0, 8);
 
   const formatDateTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -318,17 +411,17 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
       activeColor: 'text-red-500 bg-red-50 border-red-200',
     },
     {
-      key: 'to_process' as keyof PropertyStatus,
+      key: 'to_call' as keyof PropertyStatus,
       icon: Clock,
-      label: 'À traiter',
-      color: status.to_process ? 'text-orange-500 bg-orange-50 border-orange-200' : 'text-gray-500 bg-gray-50 border-gray-200',
+      label: 'À appeler',
+      color: status.to_call ? 'text-orange-500 bg-orange-50 border-orange-200' : 'text-gray-500 bg-gray-50 border-gray-200',
       activeColor: 'text-orange-500 bg-orange-50 border-orange-200',
     },
     {
-      key: 'to_call' as keyof PropertyStatus,
+      key: 'reminder' as keyof PropertyStatus,
       icon: Phone,
       label: 'À rappeler',
-      color: status.to_call ? 'text-blue-500 bg-blue-50 border-blue-200' : 'text-gray-500 bg-gray-50 border-gray-200',
+      color: status.reminder ? 'text-blue-500 bg-blue-50 border-blue-200' : 'text-gray-500 bg-gray-50 border-gray-200',
       activeColor: 'text-blue-500 bg-blue-50 border-blue-200',
     },
     {
@@ -384,7 +477,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         </div>
 
         {/* Status Details */}
-        {(status.called || status.to_call || status.rdv) && (
+        {(status.called || status.reminder || status.rdv || status.to_call) && (
           <div className="mt-4 space-y-2 rounded-xl border border-gray-200 bg-gray-50 p-3">
             {statusActor && (
               <div className="flex items-center justify-between text-sm">
@@ -400,12 +493,38 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
                 </span>
               </div>
             )}
-            {status.to_call && status.reminder_date && (
+            {status.to_call && (
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">Rappel prévu :</span>
-                <span className="font-medium text-blue-700">
-                  {formatDateTime(status.reminder_date)}
-                </span>
+                <span className="text-gray-600">Prospection :</span>
+                <span className="font-medium text-orange-700">À appeler</span>
+              </div>
+            )}
+            {status.reminder && status.reminder_date && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">Rappel prévu :</span>
+                  <span className="font-medium text-blue-700">
+                    {formatDateTime(status.reminder_date)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={openReminderEdition}
+                    className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-white px-3 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-50"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Modifier
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteReminder}
+                    className="inline-flex items-center gap-1 rounded-full border border-red-100 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Supprimer
+                  </button>
+                </div>
               </div>
             )}
             {status.rdv && status.rdv_date && (
@@ -433,12 +552,79 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
           <textarea
             value={comment}
             onChange={(e) => setComment(e.target.value)}
-            onBlur={() => updateStatus(status, comment)}
-            placeholder="Ajouter un commentaire..."
+            placeholder="Ajouter une note horodatée..."
             rows={3}
             className="w-full resize-none rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-primary-400 focus:ring-primary-500"
           />
+          <button
+            type="button"
+            onClick={handleSaveNote}
+            disabled={loading || !comment.trim()}
+            className="inline-flex items-center gap-2 rounded-xl bg-secondary-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-secondary-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <MessageSquare className="h-4 w-4" />
+            {editingNoteId ? 'Mettre à jour la note' : 'Ajouter la note'}
+          </button>
+          {editingNoteId && (
+            <button
+              type="button"
+              onClick={cancelNoteEdition}
+              className="ml-2 inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-secondary-700 transition hover:bg-gray-50"
+            >
+              Annuler
+            </button>
+          )}
+          {notes.length > 0 && (
+            <div className="space-y-2">
+              {notes.slice(0, 6).map((note) => (
+                <div key={note.id} className="rounded-xl border border-gray-100 bg-slate-50 px-3 py-2 text-sm">
+                  <div className="mb-1 flex items-center justify-between gap-3 text-xs font-semibold text-secondary-500">
+                    <span>{activityScope.formatActor(note.user_id)}</span>
+                    {note.created_at && <span>{formatDateTime(note.created_at)}</span>}
+                  </div>
+                  <p className="whitespace-pre-wrap text-secondary-700">{note.content}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleEditNote(note)}
+                      className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs font-semibold text-secondary-700 transition hover:bg-gray-50"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Modifier
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteNote(note.id)}
+                      className="inline-flex items-center gap-1 rounded-full border border-red-100 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Supprimer
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
+
+        {timelineItems.length > 0 && (
+          <div className="mt-5 space-y-3 border-t border-gray-100 pt-4">
+            <label className="block text-sm font-semibold text-secondary-800">
+              Historique des actions
+            </label>
+            <div className="space-y-2">
+              {timelineItems.map((item) => (
+                <div key={item.id} className={`rounded-xl border px-3 py-2 text-sm ${item.tone}`}>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold">{item.label}</span>
+                    {item.date && <span className="text-xs font-semibold opacity-80">{formatDateTime(item.date)}</span>}
+                  </div>
+                  <p className="mt-1 text-xs font-semibold opacity-80">Par {item.actor}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Reminder Modal */}

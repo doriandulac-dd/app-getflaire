@@ -34,6 +34,7 @@ const initialKpis: KPIData = {
 type ErrorSection = 'kpis' | 'evolution' | 'propertyTypes' | 'statusDistribution' | 'recentActivity';
 type ErrorBySection = Partial<Record<ErrorSection, string>>;
 type CountStrategy = 'exact' | 'planned' | 'estimated';
+type PigeActionType = 'to_call' | 'called' | 'reminder' | 'rdv' | 'hidden' | 'viewed';
 
 const withTimeout = async <T,>(promise: PromiseLike<T>, label: string, timeoutMs = 6500): Promise<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -86,6 +87,9 @@ const safeCountOrDefault = async (
   }
 };
 
+const isMissingActivityTableError = (error: { code?: string; message?: string }) =>
+  error.code === '42P01' || (error.message || '').includes('pige_actions');
+
 export const useAnalytics = (filters: AnalyticsFilters) => {
   const { appUser } = useAuth();
   const activityScope = useActivityScope();
@@ -135,6 +139,122 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
 
   const applyCity = <T extends { ilike: (column: string, pattern: string) => T }>(query: T): T => {
     return filters.city ? query.ilike('city', `%${filters.city}%`) : query;
+  };
+
+  const applyActivityScope = <T extends { eq: (column: string, value: unknown) => T; in: (column: string, values: unknown[]) => T }>(query: T): T => {
+    if (activityScope.isAgencyScope && activityScope.agencyId) {
+      return query.eq('agency_id', activityScope.agencyId);
+    }
+    return query.in('user_id', activityScope.userIds);
+  };
+
+  const countPigeActions = async ({
+    actionTypes,
+    from,
+    to,
+  }: {
+    actionTypes?: PigeActionType[];
+    from?: string;
+    to?: string;
+  }) => {
+    try {
+      let query = applyActivityScope(
+        supabase
+          .from('pige_actions')
+          .select('id', { count: 'exact', head: true })
+          .eq('active', true)
+      );
+
+      if (actionTypes?.length) query = query.in('action_type', actionTypes);
+      if (from) query = query.gte('updated_at', from);
+      if (to) query = query.lte('updated_at', to);
+
+      const result = await withTimeout(query, 'comptage actions pige');
+      if (result.error) throw result.error;
+      return result.count || 0;
+    } catch (error: any) {
+      if (!isMissingActivityTableError(error)) throw error;
+
+      let legacyQuery = applyActivityScope(
+        supabase
+          .from('suivi_annonce')
+          .select('id', { count: 'exact', head: true })
+      );
+
+      const legacyStatuses = (actionTypes || []).map((actionType) => {
+        if (actionType === 'to_call') return 'to_process';
+        if (actionType === 'reminder') return 'to_call';
+        return actionType;
+      });
+
+      if (legacyStatuses.length) legacyQuery = legacyQuery.in('statut', legacyStatuses);
+      if (from) legacyQuery = legacyQuery.gte('date_suivi', from);
+      if (to) legacyQuery = legacyQuery.lte('date_suivi', to);
+
+      const result = await withTimeout(legacyQuery, 'comptage suivi legacy');
+      if (result.error) throw result.error;
+      return result.count || 0;
+    }
+  };
+
+  const fetchPigeActionRows = async ({
+    actionTypes,
+    limit,
+    from,
+    to,
+  }: {
+    actionTypes?: PigeActionType[];
+    limit?: number;
+    from?: string;
+    to?: string;
+  }) => {
+    try {
+      let query = applyActivityScope(
+        supabase
+          .from('pige_actions')
+          .select('id, action_type, updated_at, scheduled_at, annonce_id, annonces(title)')
+          .eq('active', true)
+      )
+        .order('updated_at', { ascending: false });
+
+      if (actionTypes?.length) query = query.in('action_type', actionTypes);
+      if (from) query = query.gte('updated_at', from);
+      if (to) query = query.lte('updated_at', to);
+      if (limit) query = query.limit(limit);
+
+      const result = await withTimeout(query, 'lecture actions pige');
+      if (result.error) throw result.error;
+      return (result.data || []) as any[];
+    } catch (error: any) {
+      if (!isMissingActivityTableError(error)) throw error;
+
+      let legacyQuery = applyActivityScope(
+        supabase
+          .from('suivi_annonce')
+          .select('id, statut, date_suivi, annonce_id, annonces(title)')
+      )
+        .order('date_suivi', { ascending: false });
+
+      const legacyStatuses = (actionTypes || []).map((actionType) => {
+        if (actionType === 'to_call') return 'to_process';
+        if (actionType === 'reminder') return 'to_call';
+        return actionType;
+      });
+
+      if (legacyStatuses.length) legacyQuery = legacyQuery.in('statut', legacyStatuses);
+      if (from) legacyQuery = legacyQuery.gte('date_suivi', from);
+      if (to) legacyQuery = legacyQuery.lte('date_suivi', to);
+      if (limit) legacyQuery = legacyQuery.limit(limit);
+
+      const result = await withTimeout(legacyQuery, 'lecture suivi legacy');
+      if (result.error) throw result.error;
+      return (result.data || []).map((item: any) => ({
+        ...item,
+        action_type: item.statut === 'to_process' ? 'to_call' : item.statut === 'to_call' ? 'reminder' : item.statut,
+        updated_at: item.date_suivi,
+        scheduled_at: item.date_suivi,
+      }));
+    }
   };
 
   const countAnnonces = (
@@ -194,35 +314,61 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
           safeCountOrDefault(countAnnonces(undefined, `${startDate}T00:00:00.000Z`, `${endDate}T23:59:59.999Z`), 'annonces en ligne'),
           safeCountOrDefault(countAnnonces(undefined, `${previousStartDate}T00:00:00.000Z`, `${previousEndDate}T23:59:59.999Z`), 'annonces en ligne précédent'),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
+            countPigeActions({
+              from: `${startDate}T00:00:00.000Z`,
+              to: `${endDate}T23:59:59.999Z`,
+            }).then((count) => ({ count, error: null })),
             'annonces traitées'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
+            countPigeActions({
+              from: `${previousStartDate}T00:00:00.000Z`,
+              to: `${previousEndDate}T23:59:59.999Z`,
+            }).then((count) => ({ count, error: null })),
             'annonces traitées précédent'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('statut', 'called').gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
+            countPigeActions({
+              actionTypes: ['called'],
+              from: `${startDate}T00:00:00.000Z`,
+              to: `${endDate}T23:59:59.999Z`,
+            }).then((count) => ({ count, error: null })),
             'appels'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('statut', 'called').gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
+            countPigeActions({
+              actionTypes: ['called'],
+              from: `${previousStartDate}T00:00:00.000Z`,
+              to: `${previousEndDate}T23:59:59.999Z`,
+            }).then((count) => ({ count, error: null })),
             'appels précédent'
           ),
           safeCountOrDefault(
-            supabase.from('rappels').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('status', 'pending').gte('date_rappel', new Date().toISOString()),
+            countPigeActions({ actionTypes: ['reminder', 'rdv'] }).then((count) => ({ count, error: null })),
             'rappels'
           ),
           safeCountOrDefault(
-            supabase.from('rappels').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('status', 'pending').gte('date_rappel', `${previousStartDate}T00:00:00.000Z`).lte('date_rappel', `${previousEndDate}T23:59:59.999Z`),
+            countPigeActions({
+              actionTypes: ['reminder', 'rdv'],
+              from: `${previousStartDate}T00:00:00.000Z`,
+              to: `${previousEndDate}T23:59:59.999Z`,
+            }).then((count) => ({ count, error: null })),
             'rappels précédent'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('statut', 'to_process').gte('date_suivi', `${startDate}T00:00:00.000Z`).lte('date_suivi', `${endDate}T23:59:59.999Z`),
+            countPigeActions({
+              actionTypes: ['to_call'],
+              from: `${startDate}T00:00:00.000Z`,
+              to: `${endDate}T23:59:59.999Z`,
+            }).then((count) => ({ count, error: null })),
             'à traiter'
           ),
           safeCountOrDefault(
-            supabase.from('suivi_annonce').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('statut', 'to_process').gte('date_suivi', `${previousStartDate}T00:00:00.000Z`).lte('date_suivi', `${previousEndDate}T23:59:59.999Z`),
+            countPigeActions({
+              actionTypes: ['to_call'],
+              from: `${previousStartDate}T00:00:00.000Z`,
+              to: `${previousEndDate}T23:59:59.999Z`,
+            }).then((count) => ({ count, error: null })),
             'à traiter précédent'
           ),
           safeCountOrDefault(countAnnonces('Particulier', `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`), 'particuliers aujourd’hui'),
@@ -293,13 +439,11 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
         const [{ data: annoncesData, error: annoncesError }, { data: appelsData, error: appelsError }] = await Promise.all([
           withTimeout(annoncesQuery, 'évolution annonces'),
           withTimeout(
-            supabase
-              .from('suivi_annonce')
-              .select('date_suivi')
-              .in('user_id', activityScope.userIds)
-              .eq('statut', 'called')
-              .gte('date_suivi', `${startDate}T00:00:00.000Z`)
-              .lte('date_suivi', `${endDate}T23:59:59.999Z`),
+            fetchPigeActionRows({
+              actionTypes: ['called'],
+              from: `${startDate}T00:00:00.000Z`,
+              to: `${endDate}T23:59:59.999Z`,
+            }),
             'évolution appels'
           ),
         ]);
@@ -324,7 +468,9 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
         });
 
         appelsData?.forEach(item => {
-          const date = format(parseISO(item.date_suivi), 'yyyy-MM-dd');
+          const rawDate = item.scheduled_at || item.updated_at;
+          if (!rawDate) return;
+          const date = format(parseISO(rawDate), 'yyyy-MM-dd');
           const existing = evolutionMap.get(date);
           if (existing) existing.appels += 1;
         });
@@ -408,30 +554,27 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
 
     try {
       await measure('statusDistribution', async () => {
-        const [{ count: favorisCount, error: favorisError }, { data: suiviData, error: suiviError }] = await Promise.all([
+        const [{ count: favorisCount, error: favorisError }, pigeActions] = await Promise.all([
           withTimeout(
             supabase.from('favoris').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds),
             'favoris'
           ),
-          withTimeout(
-            supabase.from('suivi_annonce').select('statut').in('user_id', activityScope.userIds).limit(1000),
-            'statuts suivi'
-          ),
+          fetchPigeActionRows({ limit: 1000 }),
         ]);
 
         if (favorisError) throw favorisError;
-        if (suiviError) throw suiviError;
 
         const statusMap = new Map<string, number>();
         statusMap.set('Favoris', favorisCount || 0);
-        suiviData?.forEach(item => {
+        pigeActions?.forEach((item: any) => {
           const displayName = {
-            to_process: 'À traiter',
-            to_call: 'À rappeler',
+            to_call: 'À appeler',
+            reminder: 'À rappeler',
             called: 'Appelé',
             rdv: 'RDV',
             hidden: 'Masqué',
-          }[item.statut as string] || item.statut;
+            viewed: 'Déjà vu',
+          }[item.action_type as string] || item.action_type;
           statusMap.set(displayName, (statusMap.get(displayName) || 0) + 1);
         });
 
@@ -454,25 +597,16 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
 
     try {
       await measure('recentActivity', async () => {
-        const [appelsResult, rappelsResult, surveillancesResult] = await Promise.all([
+        const [actionsResult, favorisResult, surveillancesResult] = await Promise.all([
+          fetchPigeActionRows({ limit: 8 }),
           withTimeout(
             supabase
-              .from('suivi_annonce')
-              .select('id, date_suivi, statut, annonces!inner(title)')
+              .from('favoris')
+              .select('id, user_id, date_favoris, annonces!inner(title)')
               .in('user_id', activityScope.userIds)
-              .eq('statut', 'called')
-              .order('date_suivi', { ascending: false })
+              .order('date_favoris', { ascending: false })
               .limit(5),
-            'activité appels'
-          ),
-          withTimeout(
-            supabase
-              .from('rappels')
-              .select('id, created_at, title')
-              .in('user_id', activityScope.userIds)
-              .order('created_at', { ascending: false })
-              .limit(5),
-            'activité rappels'
+            'activité favoris'
           ),
           withTimeout(
             supabase
@@ -486,27 +620,35 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
           ),
         ]);
 
-        if (appelsResult.error) throw appelsResult.error;
-        if (rappelsResult.error) throw rappelsResult.error;
+        if (favorisResult.error) throw favorisResult.error;
         if (surveillancesResult.error) throw surveillancesResult.error;
 
         const activities: ActivityItem[] = [];
-        appelsResult.data?.forEach(item => {
+        actionsResult?.forEach((item: any) => {
+          const labelMap: Record<string, { type: ActivityItem['type']; description: string; icon: string }> = {
+            called: { type: 'appel', description: `Appel passé pour "${item.annonces?.title || 'Annonce'}"`, icon: '📞' },
+            reminder: { type: 'rappel', description: `Rappel programmé pour "${item.annonces?.title || 'Annonce'}"`, icon: '⏰' },
+            to_call: { type: 'rappel', description: `Annonce à appeler: "${item.annonces?.title || 'Annonce'}"`, icon: '☎️' },
+            rdv: { type: 'rappel', description: `RDV programmé pour "${item.annonces?.title || 'Annonce'}"`, icon: '📅' },
+            viewed: { type: 'annonce', description: `Annonce consultée: "${item.annonces?.title || 'Annonce'}"`, icon: '👁️' },
+          };
+          const meta = labelMap[item.action_type];
+          if (!meta) return;
           activities.push({
             id: item.id,
-            type: 'appel',
-            description: `Appel passé pour "${item.annonces.title}"`,
-            timestamp: item.date_suivi,
-            icon: '📞',
+            type: meta.type,
+            description: meta.description,
+            timestamp: item.scheduled_at || item.updated_at,
+            icon: meta.icon,
           });
         });
-        rappelsResult.data?.forEach(item => {
+        favorisResult.data?.forEach((item: any) => {
           activities.push({
             id: item.id,
-            type: 'rappel',
-            description: `Rappel créé: ${item.title}`,
-            timestamp: item.created_at,
-            icon: '⏰',
+            type: 'favori',
+            description: `Favori ajouté pour "${item.annonces?.title || 'Annonce'}"`,
+            timestamp: item.date_favoris,
+            icon: '❤️',
           });
         });
         surveillancesResult.data?.forEach(item => {

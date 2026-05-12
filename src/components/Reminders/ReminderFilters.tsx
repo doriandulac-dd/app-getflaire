@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Calendar, CheckCircle, Clock, Filter, Phone, Search, SlidersHorizontal, Target, X } from 'lucide-react';
+import { Calendar, CheckCircle, Clock, Filter, Phone, Search, SlidersHorizontal, X } from 'lucide-react';
 import { ReminderFilters } from '../../types/reminder';
 
 interface ReminderFiltersProps {
@@ -11,8 +11,8 @@ interface ReminderFiltersProps {
 type ReminderFilterValue = ReminderFilters[keyof ReminderFilters];
 
 const typeOptions = [
-  { value: 'to_process', label: 'À traiter', icon: Target },
-  { value: 'to_call', label: 'À rappeler', icon: Phone },
+  { value: 'to_call', label: 'À appeler', icon: Clock },
+  { value: 'reminder', label: 'À rappeler', icon: Phone },
   { value: 'called', label: 'Appelé', icon: CheckCircle },
   { value: 'rdv', label: 'RDV', icon: Calendar },
 ] as const;

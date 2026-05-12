@@ -12,8 +12,8 @@ interface ReminderEditModalProps {
 }
 
 const typeOptions = [
-  { value: 'to_process', label: 'À traiter' },
-  { value: 'to_call', label: 'À rappeler' },
+  { value: 'to_call', label: 'À appeler' },
+  { value: 'reminder', label: 'À rappeler' },
   { value: 'called', label: 'Appelé' },
   { value: 'rdv', label: 'RDV' },
 ] as const;
@@ -29,7 +29,7 @@ const ReminderEditModal: React.FC<ReminderEditModalProps> = ({
     date: '',
     time: '',
     note: '',
-    type: 'to_process' as ReminderFromSuivi['statut'],
+    type: 'reminder' as ReminderFromSuivi['statut'],
   });
   const [loading, setLoading] = useState(false);
 
