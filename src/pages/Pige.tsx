@@ -40,16 +40,16 @@ const Pige: React.FC = () => {
   const resultsRef = useRef<HTMLDivElement | null>(null);
 
   const sortOptions = [
-    { field: 'publication_date', direction: 'desc' as const, label: 'Plus recent' },
+    { field: 'publication_date', direction: 'desc' as const, label: 'Plus récent' },
     { field: 'publication_date', direction: 'asc' as const, label: 'Plus ancien' },
     { field: 'price', direction: 'asc' as const, label: 'Prix croissant' },
-    { field: 'price', direction: 'desc' as const, label: 'Prix decroissant' },
-    { field: 'size', direction: 'desc' as const, label: 'Surface decroissante' },
+    { field: 'price', direction: 'desc' as const, label: 'Prix décroissant' },
+    { field: 'size', direction: 'desc' as const, label: 'Surface décroissante' },
     { field: 'city', direction: 'asc' as const, label: 'Ville A-Z' },
     { field: 'source', direction: 'asc' as const, label: 'Source A-Z' },
     { field: 'status', direction: 'asc' as const, label: 'Statuts prioritaires' },
-    { field: 'non_processed', direction: 'asc' as const, label: 'Non traitees d abord' },
-    { field: 'created_at', direction: 'desc' as const, label: 'Dernieres ajoutees' },
+    { field: 'non_processed', direction: 'asc' as const, label: "Non traitées d'abord" },
+    { field: 'created_at', direction: 'desc' as const, label: 'Dernières ajoutées' },
   ];
 
   const activeFiltersCount = useMemo(
@@ -70,14 +70,14 @@ const Pige: React.FC = () => {
 
     return [
       {
-        label: 'Urgentes a traiter',
+        label: 'Urgentes à traiter',
         value: urgent,
-        helper: 'Priorites chaudes detectees',
+        helper: 'Priorités chaudes détectées',
         icon: Flame,
         accent: 'bg-primary-500 text-secondary-950',
       },
       {
-        label: 'Avec numero',
+        label: 'Avec numéro',
         value: withPhone,
         helper: 'Contacts exploitables maintenant',
         icon: Target,
@@ -100,12 +100,12 @@ const Pige: React.FC = () => {
       onClick: () => setFilters((prev) => ({ ...prev, urgent_only: prev.urgent_only ? undefined : true })),
     },
     {
-      label: 'Avec numero',
+      label: 'Avec numéro',
       active: Boolean(filters.has_phone),
       onClick: () => setFilters((prev) => ({ ...prev, has_phone: prev.has_phone ? undefined : true })),
     },
     {
-      label: 'A appeler',
+      label: 'À appeler',
       active: (filters.status || []).includes('to_call'),
       onClick: () =>
         setFilters((prev) => ({
@@ -114,7 +114,7 @@ const Pige: React.FC = () => {
         })),
     },
     {
-      label: 'A rappeler',
+      label: 'À rappeler',
       active: (filters.status || []).includes('reminder'),
       onClick: () =>
         setFilters((prev) => ({
@@ -206,7 +206,7 @@ const Pige: React.FC = () => {
           <div>
             <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white shadow-lg shadow-black/10 backdrop-blur">
               <Sparkles className="h-4 w-4 text-primary-300" />
-              Cockpit pige immobiliere
+              Cockpit pige immobilière
             </div>
             <h1 className="max-w-4xl text-3xl font-bold leading-tight text-white sm:text-4xl lg:text-[2.8rem]">
               Priorisez les annonces qui meritent vraiment votre prochain appel.
@@ -272,7 +272,7 @@ const Pige: React.FC = () => {
               Pilotage des resultats
             </p>
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-bold text-secondary-900">Pige immobiliere</h2>
+              <h2 className="text-2xl font-bold text-secondary-900">Pige immobilière</h2>
               <span className="rounded-full bg-secondary-100 px-3 py-1 text-sm font-medium text-secondary-700">
                 {totalCount} annonce{totalCount > 1 ? 's' : ''}
               </span>
@@ -357,7 +357,7 @@ const Pige: React.FC = () => {
             onClick={refresh}
             className="mt-3 inline-flex items-center gap-2 text-sm font-medium text-red-700 hover:text-red-800"
           >
-            Reessayer
+            Réessayer
             <ArrowUpRight className="h-4 w-4" />
           </button>
         </div>
@@ -365,9 +365,9 @@ const Pige: React.FC = () => {
 
       {hasNoAuthorizedDepartments && !loading && !error && (
         <div className="rounded-3xl border border-primary-200 bg-primary-50 p-5 text-primary-900" data-gsap-reveal>
-          <p className="font-semibold">Aucun departement actif dans votre abonnement</p>
+          <p className="font-semibold">Aucun département actif dans votre abonnement</p>
           <p className="mt-1 text-sm text-primary-800">
-            Ajoutez au moins un departement depuis vos parametres ou votre abonnement pour afficher la pige immobiliere.
+            Ajoutez au moins un département depuis vos paramètres ou votre abonnement pour afficher la pige immobilière.
           </p>
         </div>
       )}
@@ -395,16 +395,16 @@ const Pige: React.FC = () => {
           !loading && !hasNoAuthorizedDepartments && (
             <div className="rounded-3xl border border-dashed border-gray-300 bg-white/70 px-6 py-14 text-center" data-gsap-reveal>
               <p className="text-lg font-semibold text-secondary-800">
-                Aucune annonce ne correspond a ces criteres.
+                Aucune annonce ne correspond à ces critères.
               </p>
               <p className="mt-2 text-sm text-secondary-500">
-                Elargissez vos filtres ou relancez une recherche plus ouverte.
+                Élargissez vos filtres ou relancez une recherche plus ouverte.
               </p>
               <button
                 onClick={handleClearFilters}
                 className="mt-5 inline-flex items-center gap-2 rounded-2xl bg-secondary-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-secondary-800"
               >
-                Reinitialiser les filtres
+                Réinitialiser les filtres
                 <ArrowUpRight className="h-4 w-4" />
               </button>
             </div>

@@ -20,10 +20,10 @@ const propertyTypes = [
 
 const statusOptions = [
   { value: 'favorite', label: 'Favoris', accent: 'text-red-700 bg-red-50 border-red-100' },
-  { value: 'to_call', label: 'A appeler', accent: 'text-orange-700 bg-orange-50 border-orange-100' },
-  { value: 'reminder', label: 'A rappeler', accent: 'text-blue-700 bg-blue-50 border-blue-100' },
-  { value: 'called', label: 'Appeles', accent: 'text-green-700 bg-green-50 border-green-100' },
-  { value: 'hidden', label: 'Masques', accent: 'text-slate-700 bg-slate-100 border-slate-200' },
+  { value: 'to_call', label: 'À appeler', accent: 'text-orange-700 bg-orange-50 border-orange-100' },
+  { value: 'reminder', label: 'À rappeler', accent: 'text-blue-700 bg-blue-50 border-blue-100' },
+  { value: 'called', label: 'Appelés', accent: 'text-green-700 bg-green-50 border-green-100' },
+  { value: 'hidden', label: 'Masqués', accent: 'text-slate-700 bg-slate-100 border-slate-200' },
 ];
 
 const PropertyFilters: React.FC<PropertyFiltersProps> = ({
@@ -166,7 +166,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-400" />
               <input
                 type="text"
-                placeholder="Titre, contact, description, ville, telephone, source..."
+                placeholder="Titre, contact, description, ville, téléphone, source..."
                 value={filters.search || ''}
                 onChange={(e) => handleFilterChange('search', e.target.value || undefined)}
                 className="h-12 w-full rounded-2xl border border-gray-200 bg-white pl-11 pr-4 text-sm shadow-sm focus:border-primary-400 focus:ring-primary-500"
@@ -285,7 +285,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
                       : 'border-gray-200 bg-white text-secondary-600 hover:bg-gray-50'
                   }`}
                 >
-                  Avec numero
+                  Avec numéro
                 </button>
                 <button
                   type="button"
@@ -298,7 +298,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
                       : 'border-gray-200 bg-white text-secondary-600 hover:bg-gray-50'
                   }`}
                 >
-                  Non traitees
+                  Non traitées
                 </button>
               </div>
             </div>
@@ -402,7 +402,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
                   />
                   <input
                     type="text"
-                    placeholder="Departement"
+                    placeholder="Département"
                     value={filters.department || ''}
                     onChange={(e) => handleFilterChange('department', e.target.value || undefined)}
                     className="h-11 w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
@@ -455,7 +455,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
                     onChange={(e) => handleFilterChange('recent_only', e.target.checked || undefined)}
                     className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                   />
-                  Annonces recentes
+                  Annonces récentes
                 </label>
                 <label className="mt-3 flex items-center gap-2 text-sm text-secondary-700">
                   <input

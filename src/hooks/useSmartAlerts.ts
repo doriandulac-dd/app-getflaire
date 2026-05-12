@@ -5,8 +5,8 @@ import { Annonce, Client } from '../types';
 import { useAuth } from './useAuth';
 import { useActivityScope } from './useActivityScope';
 import { savePropertyFavorite } from '../utils/propertyFavorites';
-import { savePropertyStatus } from '../utils/propertyStatus';
-import type { PropertyStatusValue } from '../utils/propertyStatus';
+import { savePropertyAction } from '../utils/propertyActivities';
+import type { PropertyActionType } from '../utils/propertyActivities';
 import {
   AlertMatchResult,
   AlertNotification,
@@ -579,11 +579,18 @@ export const useSmartAlerts = () => {
 
   const addToFollowUp = async (annonceId: string, resultId?: string, statut = 'to_process') => {
     if (!appUser) throw new Error('Utilisateur introuvable');
-    await savePropertyStatus({
+    const actionType: PropertyActionType =
+      statut === 'to_call' ? 'reminder' :
+      statut === 'called' ? 'called' :
+      statut === 'rdv' ? 'rdv' :
+      statut === 'hidden' ? 'hidden' :
+      'to_call';
+
+    await savePropertyAction({
       annonceId,
       userId: appUser.id,
       activityScope,
-      statut: statut as PropertyStatusValue,
+      actionType,
     });
     if (resultId) await updateResultStatus(resultId, 'followed');
     toast.success(statut === 'to_call' ? 'Rappel préparé' : 'Ajouté au suivi');

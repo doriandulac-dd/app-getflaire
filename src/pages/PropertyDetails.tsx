@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Copy,
   ExternalLink,
   MapPin,
   Phone,
@@ -401,9 +402,9 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
   if (!annonce) {
     return (
       <div className="rounded-2xl border border-gray-200 bg-white px-6 py-14 text-center">
-        <p className="text-secondary-500">Annonce non trouvee</p>
+        <p className="text-secondary-500">Annonce non trouvée</p>
         <button onClick={goBack} className="mt-4 font-medium text-primary-600 hover:text-primary-700">
-          {onClose ? 'Fermer' : 'Retour a la pige'}
+          {onClose ? 'Fermer' : 'Retour à la pige'}
         </button>
       </div>
     );
@@ -416,7 +417,7 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
           <button
             onClick={goBack}
             className="rounded-lg border border-gray-200 bg-white p-2 text-gray-500 shadow-sm hover:bg-gray-50 hover:text-gray-700"
-            aria-label={onClose ? 'Fermer' : 'Retour a la pige'}
+            aria-label={onClose ? 'Fermer' : 'Retour à la pige'}
           >
             {onClose ? <X className="h-5 w-5" /> : <ArrowLeft className="h-5 w-5" />}
           </button>
@@ -615,12 +616,14 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <h3 className="font-semibold text-secondary-900">Informations rapides</h3>
               <div className="mt-4 space-y-1 text-sm">
-                <InfoRow label="Departement" value={annonce.departement} compact />
+                <InfoRow label="Département" value={annonce.departement} compact />
                 <InfoRow label="Source" value={annonce.source} compact />
-                <InfoRow label="Detection GetFlaire" value={formatDate(annonce.created_at)} compact />
+                <InfoRow label="Publication source" value={formatDate(annonce.publication_date)} compact />
+                <InfoRow label="Première détection GetFlaire" value={formatDate(annonce.created_at)} compact />
+                <InfoRow label="Date de récupération" value={formatDate(annonce.created_at)} compact />
                 {annonce.ges && <InfoRow label="GES" value={annonce.ges} compact />}
                 <InfoRow label="En ligne" value={annonce.en_ligne ? 'Oui' : 'Non'} compact />
-                {annonce.maj_prix && <InfoRow label="Prix modifie" value="Oui" compact />}
+                {annonce.maj_prix && <InfoRow label="Prix modifié" value="Oui" compact />}
               </div>
             </section>
           </div>
@@ -653,9 +656,18 @@ const ContactPanel = ({
     if (!annonce.phone) return;
     try {
       await navigator.clipboard.writeText(annonce.phone);
-      toast.success('Numero copie');
+      toast.success('Numéro copié');
     } catch {
-      toast.error('Impossible de copier le numero');
+      toast.error('Impossible de copier le numéro');
+    }
+  };
+
+  const copyText = async (value: string, successMessage: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(successMessage);
+    } catch {
+      toast.error('Impossible de copier le texte');
     }
   };
 
@@ -665,14 +677,14 @@ const ContactPanel = ({
     <div className="mt-4 space-y-3">
       <div className="flex items-center gap-3">
         <User className="h-5 w-5 text-secondary-500" />
-        <span className="text-secondary-700">{annonce.owner_type}</span>
+        <span className="text-secondary-700">Vendeur {annonce.owner_type}</span>
       </div>
       {annonce.phone && (
         <div className="space-y-3">
           {contactName && (
             <div className="flex items-center gap-3">
               <User className="h-5 w-5 text-secondary-500" />
-              <span className="text-secondary-700">{contactName}</span>
+              <span className="text-secondary-700">Nom du contact : {contactName}</span>
             </div>
           )}
           <div className="flex items-center gap-3">
@@ -723,11 +735,21 @@ const ContactPanel = ({
     {annonce.phone && (
       <div className="mt-5 border-t border-gray-100 pt-4 space-y-4">
         <div>
-          <h4 className="text-sm font-semibold text-secondary-900">3 scenarios d'appel</h4>
+          <h4 className="text-sm font-semibold text-secondary-900">3 scénarios d'appel</h4>
           <div className="mt-3 space-y-2">
             {callScripts.map((script) => (
               <div key={script.title} className="rounded-xl border border-gray-100 bg-slate-50 px-3 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-secondary-500">{script.title}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-secondary-500">{script.title}</p>
+                  <button
+                    type="button"
+                    onClick={() => copyText(script.body, 'Script copié')}
+                    className="inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-secondary-700 transition hover:bg-gray-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copier
+                  </button>
+                </div>
                 <p className="mt-2 text-sm leading-6 text-secondary-700">{script.body}</p>
               </div>
             ))}
@@ -735,11 +757,21 @@ const ContactPanel = ({
         </div>
 
         <div>
-          <h4 className="text-sm font-semibold text-secondary-900">3 SMS proposes</h4>
+          <h4 className="text-sm font-semibold text-secondary-900">3 SMS proposés</h4>
           <div className="mt-3 space-y-2">
             {smsSuggestions.map((sms) => (
               <div key={sms.title} className="rounded-xl border border-gray-100 bg-white px-3 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-secondary-500">{sms.title}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-secondary-500">{sms.title}</p>
+                  <button
+                    type="button"
+                    onClick={() => copyText(sms.body, 'SMS copié')}
+                    className="inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-gray-200 bg-white px-2 py-1 text-xs font-semibold text-secondary-700 transition hover:bg-gray-50"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Copier
+                  </button>
+                </div>
                 <p className="mt-2 text-sm leading-6 text-secondary-700">{sms.body}</p>
               </div>
             ))}

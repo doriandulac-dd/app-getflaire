@@ -140,18 +140,15 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         // Remove from favorites
         await deletePropertyFavorite({ annonceId, userId: appUser.id, activityScope });
 
-        setCurrentFavoriteId(null);
-        setStatus(prev => ({ ...prev, favorite: false }));
         toast.success('Retiré des favoris');
       } else {
         // Add to favorites
-        const data = await savePropertyFavorite({ annonceId, userId: appUser.id, activityScope });
+        await savePropertyFavorite({ annonceId, userId: appUser.id, activityScope });
 
-        setCurrentFavoriteId(data.id);
-        setStatus(prev => ({ ...prev, favorite: true }));
         toast.success('Ajouté aux favoris');
       }
 
+      await fetchFavoriteStatus();
       onUpdate?.(status, comment);
     } catch (error) {
       console.error('[favorite-update] actions update failed', error);
@@ -347,6 +344,19 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
     toggleAction('reminder', false);
   };
 
+  const openRdvEdition = () => {
+    if (status.rdv_date) {
+      const rdvDateValue = new Date(status.rdv_date);
+      setRdvDate(rdvDateValue.toISOString().split('T')[0]);
+      setRdvTime(rdvDateValue.toTimeString().slice(0, 5));
+    }
+    setShowRdvModal(true);
+  };
+
+  const deleteRdv = () => {
+    toggleAction('rdv', false);
+  };
+
   const buildTimeline = () => {
     const favoritesTimeline = favoriteRows.map((favorite) => ({
       id: `favorite-${favorite.id}`,
@@ -528,11 +538,31 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
               </div>
             )}
             {status.rdv && status.rdv_date && (
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-600">RDV prévu :</span>
-                <span className="font-medium text-purple-700">
-                  {formatDateTime(status.rdv_date)}
-                </span>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-600">RDV prévu :</span>
+                  <span className="font-medium text-purple-700">
+                    {formatDateTime(status.rdv_date)}
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={openRdvEdition}
+                    className="inline-flex items-center gap-1 rounded-full border border-purple-100 bg-white px-3 py-1 text-xs font-semibold text-purple-700 transition hover:bg-purple-50"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Modifier
+                  </button>
+                  <button
+                    type="button"
+                    onClick={deleteRdv}
+                    className="inline-flex items-center gap-1 rounded-full border border-red-100 bg-white px-3 py-1 text-xs font-semibold text-red-700 transition hover:bg-red-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Supprimer
+                  </button>
+                </div>
               </div>
             )}
           </div>

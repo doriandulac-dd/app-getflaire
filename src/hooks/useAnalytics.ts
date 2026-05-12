@@ -35,6 +35,8 @@ type ErrorSection = 'kpis' | 'evolution' | 'propertyTypes' | 'statusDistribution
 type ErrorBySection = Partial<Record<ErrorSection, string>>;
 type CountStrategy = 'exact' | 'planned' | 'estimated';
 type PigeActionType = 'to_call' | 'called' | 'reminder' | 'rdv' | 'hidden' | 'viewed';
+type ScopedFavoriteRow = { id: string; annonce_id?: string | null; user_id?: string | null; date_favoris?: string | null; annonces?: { title?: string | null } | null };
+type ScopedSurveillanceRow = { id: string; created_at: string; annonces: { title: string } };
 
 const withTimeout = async <T,>(promise: PromiseLike<T>, label: string, timeoutMs = 6500): Promise<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -142,6 +144,20 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
   };
 
   const applyActivityScope = <T extends { eq: (column: string, value: unknown) => T; in: (column: string, values: unknown[]) => T }>(query: T): T => {
+    if (activityScope.isAgencyScope && activityScope.agencyId) {
+      return query.eq('agency_id', activityScope.agencyId);
+    }
+    return query.in('user_id', activityScope.userIds);
+  };
+
+  const applyFavoriteScope = <T extends { eq: (column: string, value: unknown) => T; in: (column: string, values: unknown[]) => T }>(query: T): T => {
+    if (activityScope.isAgencyScope && activityScope.agencyId) {
+      return query.eq('agency_id', activityScope.agencyId);
+    }
+    return query.in('user_id', activityScope.userIds);
+  };
+
+  const applySurveillanceScope = <T extends { eq: (column: string, value: unknown) => T; in: (column: string, values: unknown[]) => T }>(query: T): T => {
     if (activityScope.isAgencyScope && activityScope.agencyId) {
       return query.eq('agency_id', activityScope.agencyId);
     }
@@ -257,6 +273,110 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
     }
   };
 
+  const fetchFavoriteRows = async ({
+    limit,
+    from,
+    to,
+  }: {
+    limit?: number;
+    from?: string;
+    to?: string;
+  } = {}) => {
+    let query = applyFavoriteScope(
+      supabase
+        .from('favoris')
+        .select('id, annonce_id, user_id, date_favoris, annonces(title)')
+    )
+      .order('date_favoris', { ascending: false });
+
+    if (from) query = query.gte('date_favoris', from);
+    if (to) query = query.lte('date_favoris', to);
+    if (limit) query = query.limit(limit);
+
+    const result = await withTimeout(query, 'lecture favoris');
+    if (result.error) throw result.error;
+    return (result.data || []) as ScopedFavoriteRow[];
+  };
+
+  const fetchSurveillanceRows = async (limit?: number) => {
+    let query = applySurveillanceScope(
+      supabase
+        .from('surveillances')
+        .select('id, created_at, annonces!inner(title)')
+        .eq('active', true)
+    )
+      .order('created_at', { ascending: false });
+
+    if (limit) query = query.limit(limit);
+
+    const result = await withTimeout(query, 'lecture surveillances');
+    if (result.error) throw result.error;
+    return (result.data || []) as ScopedSurveillanceRow[];
+  };
+
+  const countProcessedProperties = async ({
+    from,
+    to,
+  }: {
+    from?: string;
+    to?: string;
+  }) => {
+    const [actions, favorites] = await Promise.all([
+      fetchPigeActionRows({
+        actionTypes: ['to_call', 'called', 'reminder', 'rdv', 'hidden'],
+        from,
+        to,
+        limit: 5000,
+      }),
+      fetchFavoriteRows({ from, to, limit: 5000 }),
+    ]);
+
+    return new Set([
+      ...actions.map((item: any) => item.annonce_id).filter(Boolean),
+      ...favorites.map((item) => item.annonce_id).filter(Boolean),
+    ]).size;
+  };
+
+  const countScheduledOpenActions = async ({
+    actionTypes,
+    from,
+    to,
+  }: {
+    actionTypes: PigeActionType[];
+    from: string;
+    to: string;
+  }) => {
+    const query = applyActivityScope(
+      supabase
+        .from('pige_actions')
+        .select('id', { count: 'exact', head: true })
+        .eq('active', true)
+        .in('action_type', actionTypes)
+        .gte('scheduled_at', from)
+        .lte('scheduled_at', to)
+    );
+
+    const result = await withTimeout(query, 'comptage actions planifiées');
+    if (result.error) {
+      if (!isMissingActivityTableError(result.error as { code?: string; message?: string })) throw result.error;
+
+      const legacyQuery = applyActivityScope(
+        supabase
+          .from('suivi_annonce')
+          .select('id', { count: 'exact', head: true })
+          .in('statut', actionTypes.map((actionType) => actionType === 'reminder' ? 'to_call' : actionType === 'to_call' ? 'to_process' : actionType))
+          .gte('date_suivi', from)
+          .lte('date_suivi', to)
+      );
+
+      const legacyResult = await withTimeout(legacyQuery, 'comptage suivi planifié');
+      if (legacyResult.error) throw legacyResult.error;
+      return legacyResult.count || 0;
+    }
+
+    return result.count || 0;
+  };
+
   const countAnnonces = (
     ownerType?: string,
     from?: string,
@@ -314,14 +434,14 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
           safeCountOrDefault(countAnnonces(undefined, `${startDate}T00:00:00.000Z`, `${endDate}T23:59:59.999Z`), 'annonces en ligne'),
           safeCountOrDefault(countAnnonces(undefined, `${previousStartDate}T00:00:00.000Z`, `${previousEndDate}T23:59:59.999Z`), 'annonces en ligne précédent'),
           safeCountOrDefault(
-            countPigeActions({
+            countProcessedProperties({
               from: `${startDate}T00:00:00.000Z`,
               to: `${endDate}T23:59:59.999Z`,
             }).then((count) => ({ count, error: null })),
             'annonces traitées'
           ),
           safeCountOrDefault(
-            countPigeActions({
+            countProcessedProperties({
               from: `${previousStartDate}T00:00:00.000Z`,
               to: `${previousEndDate}T23:59:59.999Z`,
             }).then((count) => ({ count, error: null })),
@@ -344,11 +464,15 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
             'appels précédent'
           ),
           safeCountOrDefault(
-            countPigeActions({ actionTypes: ['reminder', 'rdv'] }).then((count) => ({ count, error: null })),
+            countScheduledOpenActions({
+              actionTypes: ['reminder', 'rdv'],
+              from: new Date().toISOString(),
+              to: '9999-12-31T23:59:59.999Z',
+            }).then((count) => ({ count, error: null })),
             'rappels'
           ),
           safeCountOrDefault(
-            countPigeActions({
+            countScheduledOpenActions({
               actionTypes: ['reminder', 'rdv'],
               from: `${previousStartDate}T00:00:00.000Z`,
               to: `${previousEndDate}T23:59:59.999Z`,
@@ -376,7 +500,9 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
           safeCountOrDefault(countAnnonces('Pro', `${today}T00:00:00.000Z`, `${today}T23:59:59.999Z`), 'pros aujourd’hui'),
           safeCountOrDefault(countAnnonces('Pro', `${yesterdayStr}T00:00:00.000Z`, `${yesterdayStr}T23:59:59.999Z`), 'pros hier'),
           safeCountOrDefault(
-            supabase.from('surveillances').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds).eq('active', true),
+            applySurveillanceScope(
+              supabase.from('surveillances').select('id', { count: 'exact', head: true }).eq('active', true)
+            ),
             'surveillances'
           ),
         ]);
@@ -556,7 +682,9 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
       await measure('statusDistribution', async () => {
         const [{ count: favorisCount, error: favorisError }, pigeActions] = await Promise.all([
           withTimeout(
-            supabase.from('favoris').select('id', { count: 'exact', head: true }).in('user_id', activityScope.userIds),
+            applyFavoriteScope(
+              supabase.from('favoris').select('id', { count: 'exact', head: true })
+            ),
             'favoris'
           ),
           fetchPigeActionRows({ limit: 1000 }),
@@ -599,29 +727,9 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
       await measure('recentActivity', async () => {
         const [actionsResult, favorisResult, surveillancesResult] = await Promise.all([
           fetchPigeActionRows({ limit: 8 }),
-          withTimeout(
-            supabase
-              .from('favoris')
-              .select('id, user_id, date_favoris, annonces!inner(title)')
-              .in('user_id', activityScope.userIds)
-              .order('date_favoris', { ascending: false })
-              .limit(5),
-            'activité favoris'
-          ),
-          withTimeout(
-            supabase
-              .from('surveillances')
-              .select('id, created_at, annonces!inner(title)')
-              .in('user_id', activityScope.userIds)
-              .eq('active', true)
-              .order('created_at', { ascending: false })
-              .limit(5),
-            'activité surveillances'
-          ),
+          fetchFavoriteRows({ limit: 5 }),
+          fetchSurveillanceRows(5),
         ]);
-
-        if (favorisResult.error) throw favorisResult.error;
-        if (surveillancesResult.error) throw surveillancesResult.error;
 
         const activities: ActivityItem[] = [];
         actionsResult?.forEach((item: any) => {
@@ -642,7 +750,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
             icon: meta.icon,
           });
         });
-        favorisResult.data?.forEach((item: any) => {
+        favorisResult.forEach((item) => {
           activities.push({
             id: item.id,
             type: 'favori',
@@ -651,7 +759,7 @@ export const useAnalytics = (filters: AnalyticsFilters) => {
             icon: '❤️',
           });
         });
-        surveillancesResult.data?.forEach(item => {
+        surveillancesResult.forEach(item => {
           activities.push({
             id: item.id,
             type: 'surveillance',

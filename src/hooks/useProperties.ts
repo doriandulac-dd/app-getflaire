@@ -128,28 +128,6 @@ const normalizeText = (value?: string | null) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '');
 
-const parseSourceDetails = (sourceData: unknown) => {
-  try {
-    if (sourceData && typeof sourceData === 'string') return JSON.parse(sourceData) as Record<string, unknown>;
-    if (sourceData && typeof sourceData === 'object') return sourceData as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-  return {};
-};
-
-const getContactName = (sourceData: unknown) => {
-  const details = parseSourceDetails(sourceData);
-  const candidateKeys = ['contact_name', 'contactName', 'nom_contact', 'seller_name', 'owner_name', 'name'];
-
-  for (const key of candidateKeys) {
-    const value = details[key];
-    if (typeof value === 'string' && value.trim()) return value.trim();
-  }
-
-  return '';
-};
-
 const getPropertyTypeAliases = (type: string) => {
   const aliases = PROPERTY_TYPE_ALIASES[type] || [type];
   return aliases.map(normalizePropertyType);
@@ -176,15 +154,20 @@ const normalizeActivityStatus = (status?: string | null) => {
   return status || '';
 };
 
-const legacyStatusForFilter = (status: string) => {
-  if (status === 'to_call') return 'to_process';
-  if (status === 'reminder') return 'to_call';
-  return status;
-};
-
 const isMissingActivityTableError = (error: { code?: string; message?: string }) => {
   const message = error.message || '';
   return error.code === '42P01' || message.includes('pige_actions') || message.includes('Could not find the table');
+};
+
+const applyActivityScopeFilter = <T extends { eq: (column: string, value: unknown) => T; in: (column: string, values: unknown[]) => T }>(
+  query: T,
+  activityScope: ReturnType<typeof useActivityScope>
+) => {
+  if (activityScope.isAgencyScope && activityScope.agencyId) {
+    return query.eq('agency_id', activityScope.agencyId);
+  }
+
+  return query.in('user_id', activityScope.userIds);
 };
 
 type UseAnnoncesOptions = {
@@ -194,6 +177,7 @@ type UseAnnoncesOptions = {
 };
 
 const QUERY_TIMEOUT_MS = 12000;
+const COUNT_TIMEOUT_MS = 6000;
 
 const normalizeDepartment = (value?: string | null) => {
   const raw = (value || '').trim().toUpperCase();
@@ -219,26 +203,6 @@ const normalizeDepartments = (departments?: string[]) =>
 
 const getDepartmentLabels = (department: string) => DEPARTMENT_LABELS[department] || [];
 
-const getDepartmentFromPostalCode = (postalCode?: string | null) => {
-  const normalized = (postalCode || '').trim();
-  if (normalized.startsWith('20')) return '2A';
-  return normalizeDepartment(normalized.slice(0, 2));
-};
-
-const matchesDepartmentScope = (annonce: Annonce, departments?: string[]) => {
-  const allowedDepartments = normalizeDepartments(departments);
-  if (!allowedDepartments.length) return true;
-
-  const annonceDepartment = normalizeDepartment(annonce.departement)
-    || DEPARTMENT_NAME_TO_CODE.get(normalizeText(annonce.departement))
-    || '';
-  const postalDepartment = getDepartmentFromPostalCode(annonce.postal_code);
-
-  return allowedDepartments.some(department =>
-    department === annonceDepartment || department === postalDepartment
-  );
-};
-
 const getStatusPriority = (annonce: Annonce) => {
   if (annonce.favorite_user_ids?.length) return 0;
   if (annonce.activity_status === 'to_call') return 1;
@@ -248,10 +212,10 @@ const getStatusPriority = (annonce: Annonce) => {
   return 4;
 };
 
-const withTimeout = async <T>(promise: PromiseLike<T>, label: string): Promise<T> => {
+const withTimeout = async <T>(promise: PromiseLike<T>, label: string, timeoutMs = QUERY_TIMEOUT_MS): Promise<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(`${label} a pris trop de temps`)), QUERY_TIMEOUT_MS);
+    timeoutId = setTimeout(() => reject(new Error(`${label} a pris trop de temps`)), timeoutMs);
   });
 
   try {
@@ -260,6 +224,31 @@ const withTimeout = async <T>(promise: PromiseLike<T>, label: string): Promise<T
     if (timeoutId) clearTimeout(timeoutId);
   }
 };
+
+const getPublishedRelative = (dateValue?: string | null) => {
+  if (!dateValue) return '';
+
+  const date = new Date(dateValue);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const days = Math.floor((Date.now() - date.getTime()) / (24 * 60 * 60 * 1000));
+  const formattedDate = new Intl.DateTimeFormat('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+
+  if (days <= 0) return `Publié aujourd'hui - ${formattedDate}`;
+  if (days === 1) return `Publié hier - ${formattedDate}`;
+  return `Publié il y a ${days} jours - ${formattedDate}`;
+};
+
+const withPublishedRelative = (annonces: Annonce[]) =>
+  annonces.map((annonce) => ({
+    ...annonce,
+    published_relative: (annonce as Annonce & { published_relative?: string }).published_relative
+      || getPublishedRelative(annonce.publication_date || annonce.created_at),
+  }));
 
 export const useAnnonces = (
   filters: PropertyFilters = {},
@@ -302,44 +291,63 @@ export const useAnnonces = (
       let matchingStatusIds: string[] | null = null;
       let excludedProcessedIds: string[] = [];
       if (appUser && activityScope.userIds.length > 0 && !filters.include_all_statuses && (filters.status?.length || filters.non_processed)) {
-        const [allFavoritesResult, allSuiviResult, allActionsResult] = await Promise.all([
+        const [allFavoritesResult, allActionsResult] = await Promise.all([
           withTimeout(
-            supabase
+            applyActivityScopeFilter(
+              supabase
               .from('favoris')
-              .select('annonce_id')
-              .in('user_id', activityScope.userIds),
+              .select('annonce_id'),
+              activityScope
+            ),
             'favoris'
           ),
           withTimeout(
-            supabase
-              .from('suivi_annonce')
-              .select('annonce_id, statut')
-              .in('user_id', activityScope.userIds),
-            'suivi'
-          ),
-          withTimeout(
-            supabase
+            applyActivityScopeFilter(
+              supabase
               .from('pige_actions')
               .select('annonce_id, action_type')
-              .eq('active', true)
-              .in('user_id', activityScope.userIds),
+              .eq('active', true),
+              activityScope
+            ),
             'actions pige'
           ),
         ]);
 
         if (allFavoritesResult.error) throw allFavoritesResult.error;
-        if (allSuiviResult.error) throw allSuiviResult.error;
         if (allActionsResult.error && !isMissingActivityTableError(allActionsResult.error)) throw allActionsResult.error;
         if (requestId !== requestIdRef.current) return;
 
         const favoriteIds = new Set(allFavoritesResult.data?.map(item => item.annonce_id) || []);
-        const suiviRows = allActionsResult.error
-          ? (allSuiviResult.data || []).map(row => ({ annonce_id: row.annonce_id, statut: normalizeActivityStatus(row.statut) }))
-          : [
-              ...(allActionsResult.data || []).map(row => ({ annonce_id: row.annonce_id, statut: row.action_type })),
-              ...(allSuiviResult.data || []).map(row => ({ annonce_id: row.annonce_id, statut: normalizeActivityStatus(row.statut) })),
-            ];
-        const suiviIds = new Set(suiviRows.map(item => item.annonce_id));
+        let activityRows = (allActionsResult.data || []).map(row => ({
+          annonce_id: row.annonce_id,
+          statut: row.action_type,
+        }));
+
+        if (allActionsResult.error) {
+          const allSuiviResult = await withTimeout(
+            applyActivityScopeFilter(
+              supabase
+              .from('suivi_annonce')
+              .select('annonce_id, statut'),
+              activityScope
+            ),
+            'suivi'
+          );
+          if (allSuiviResult.error) throw allSuiviResult.error;
+          if (requestId !== requestIdRef.current) return;
+
+          activityRows = (allSuiviResult.data || []).map(row => ({
+            annonce_id: row.annonce_id,
+            statut: normalizeActivityStatus(row.statut),
+          }));
+        }
+
+        const processedIds = new Set(activityRows.map(item => item.annonce_id));
+        const hiddenIds = new Set(
+          activityRows
+            .filter(item => item.statut === 'hidden')
+            .map(item => item.annonce_id)
+        );
 
         if (filters.status?.length) {
           const matchingIds = new Set<string>();
@@ -347,8 +355,8 @@ export const useAnnonces = (
             if (status === 'favorite') {
               favoriteIds.forEach(id => matchingIds.add(id));
             } else {
-              suiviRows
-                .filter(row => row.statut === status || legacyStatusForFilter(status) === row.statut)
+              activityRows
+                .filter(row => row.statut === status)
                 .forEach(row => matchingIds.add(row.annonce_id));
             }
           });
@@ -356,8 +364,12 @@ export const useAnnonces = (
           matchingStatusIds = Array.from(matchingIds);
         }
 
+        if (!filters.status?.includes('hidden')) {
+          excludedProcessedIds = Array.from(hiddenIds);
+        }
+
         if (filters.non_processed) {
-          excludedProcessedIds = Array.from(new Set([...favoriteIds, ...suiviIds]));
+          excludedProcessedIds = Array.from(new Set([...excludedProcessedIds, ...favoriteIds, ...processedIds]));
         }
       }
 
@@ -493,36 +505,70 @@ export const useAnnonces = (
         return scopedQuery as T;
       };
       
-      let dataQuery = applyQueryFilters(
-        supabase
-          .from('annonces_with_relative_date')
-          .select('*')
-      );
-      const countQuery = applyQueryFilters(
-        supabase
-          .from('annonces_with_relative_date')
-          .select('id', { count: 'exact', head: true })
-      );
-
-      // Apply sorting
-      dataQuery = dataQuery.order(sort.field, { ascending: sort.direction === 'asc' });
+      // `status` and `non_processed` are virtual sorts computed after activity/favorite
+      // enrichment. Keep the SQL query on a real column, then apply the requested
+      // ordering client-side below.
+      const sqlSortField = ['status', 'non_processed'].includes(sort.field)
+        ? 'publication_date'
+        : sort.field;
 
       // Apply pagination
       const from = reset ? 0 : (page - 1) * limit;
       const to = from + limit - 1;
-      dataQuery = dataQuery.range(from, to);
 
-      const [dataResult, countResult] = await Promise.all([
-        withTimeout(dataQuery, 'chargement des annonces'),
-        withTimeout(countQuery, 'comptage des annonces'),
-      ]);
+      const buildDataQuery = (source: 'annonces_with_relative_date' | 'annonces') =>
+        applyQueryFilters(
+          supabase
+            .from(source)
+            .select('*')
+        )
+          .order(sqlSortField, { ascending: sort.direction === 'asc' })
+          .range(from, to);
 
+      const buildCountQuery = (source: 'annonces_with_relative_date' | 'annonces') =>
+        applyQueryFilters(
+          supabase
+            .from(source)
+            .select('id', { count: 'planned', head: true })
+        );
+
+      let dataResult: { data: unknown[] | null; error: unknown } | null = null;
+      try {
+        dataResult = await withTimeout(
+          buildDataQuery('annonces_with_relative_date'),
+          'chargement des annonces'
+        );
+      } catch (primaryError) {
+        console.warn('[pige] relative-date view timed out, falling back to annonces', primaryError);
+      }
+
+      if (!dataResult || dataResult.error || !dataResult.data?.length) {
+        const fallbackResult = await withTimeout(
+          buildDataQuery('annonces'),
+          'chargement des annonces'
+        );
+        if (!fallbackResult.error && fallbackResult.data?.length) {
+          dataResult = fallbackResult;
+        }
+      }
+
+      let countResult: { count: number | null; error: unknown } = { count: null, error: null };
+      try {
+        countResult = await withTimeout(
+          buildCountQuery('annonces_with_relative_date'),
+          'comptage des annonces',
+          COUNT_TIMEOUT_MS
+        );
+      } catch (countError) {
+        console.warn('[pige] count skipped', countError);
+      }
+
+      if (!dataResult) throw new Error('chargement des annonces impossible');
       if (dataResult.error) throw dataResult.error;
-      if (countResult.error) throw countResult.error;
+      if (countResult.error) console.warn('[pige] count failed', countResult.error);
       if (requestId !== requestIdRef.current) return;
 
-      const nextTotalCount = countResult.count ?? 0;
-      let newAnnonces = dataResult.data || [];
+      let newAnnonces = withPublishedRelative((dataResult.data || []) as Annonce[]);
 
       if (filters.property_types?.length) {
         newAnnonces = newAnnonces.filter(annonce =>
@@ -530,27 +576,10 @@ export const useAnnonces = (
         );
       }
 
-      if (filters.search) {
-        const searchTerm = normalizeText(filters.search);
-        newAnnonces = newAnnonces.filter((annonce) => {
-          const contactName = normalizeText(getContactName(annonce.source_data));
-          return !contactName || contactName.includes(searchTerm)
-            || normalizeText(annonce.title).includes(searchTerm)
-            || normalizeText(annonce.description).includes(searchTerm)
-            || normalizeText(annonce.city).includes(searchTerm)
-            || normalizeText(annonce.phone).includes(searchTerm)
-            || normalizeText(annonce.source).includes(searchTerm);
-        });
-      }
-
-      newAnnonces = newAnnonces.filter(annonce =>
-        matchesDepartmentScope(annonce, scopedDepartments)
-      );
-
       // Fetch user statuses for all annonces (for filtering)
       let userFavoritedIds: Set<string> = new Set();
-      let userSuiviStatusMap: Map<string, string[]> = new Map();
-      let userSuiviMetaMap: Map<string, { user_id: string; note?: string; date_suivi?: string }> = new Map();
+      const userSuiviStatusMap: Map<string, string[]> = new Map();
+      const userSuiviMetaMap: Map<string, { user_id: string; note?: string; date_suivi?: string }> = new Map();
       let favoriteUserIdsMap: Map<string, string[]> = new Map();
       let favoriteActorsMap: Map<string, string[]> = new Map();
       
@@ -558,37 +587,31 @@ export const useAnnonces = (
         const annonceIds = newAnnonces.map(a => a.id);
         
         // Fetch all user favorites and statuses
-        const [favoritesResult, suiviResult, actionsResult] = await Promise.all([
+        const [favoritesResult, actionsResult] = await Promise.all([
           withTimeout(
-            supabase
+            applyActivityScopeFilter(
+              supabase
               .from('favoris')
               .select('annonce_id, user_id')
-              .in('user_id', activityScope.userIds)
               .in('annonce_id', annonceIds),
+              activityScope
+            ),
             'favoris annonces'
           ),
           withTimeout(
-            supabase
-              .from('suivi_annonce')
-              .select('annonce_id, statut, user_id, note, date_suivi')
-              .in('user_id', activityScope.userIds)
-              .in('annonce_id', annonceIds)
-              .order('date_suivi', { ascending: false }),
-            'suivi annonces'
-          ),
-          withTimeout(
-            supabase
+            applyActivityScopeFilter(
+              supabase
               .from('pige_actions')
               .select('annonce_id, action_type, user_id, note, scheduled_at, updated_at')
               .eq('active', true)
-              .in('user_id', activityScope.userIds)
               .in('annonce_id', annonceIds)
               .order('updated_at', { ascending: false }),
+              activityScope
+            ),
             'actions pige annonces'
           ),
         ]);
         if (favoritesResult.error) throw favoritesResult.error;
-        if (suiviResult.error) throw suiviResult.error;
         if (actionsResult.error && !isMissingActivityTableError(actionsResult.error)) throw actionsResult.error;
         if (requestId !== requestIdRef.current) return;
 
@@ -607,30 +630,37 @@ export const useAnnonces = (
           return map;
         }, new Map<string, string[]>());
 
-        const activityRows = actionsResult.error
-          ? (suiviResult.data || []).map(suivi => ({
-              annonce_id: suivi.annonce_id,
-              statut: normalizeActivityStatus(suivi.statut),
-              user_id: suivi.user_id,
-              note: suivi.note,
-              date_suivi: suivi.date_suivi,
-            }))
-          : [
-              ...(actionsResult.data || []).map(action => ({
-                annonce_id: action.annonce_id,
-                statut: action.action_type,
-                user_id: action.user_id,
-                note: action.note,
-                date_suivi: action.scheduled_at || action.updated_at,
-              })),
-              ...(suiviResult.data || []).map(suivi => ({
-                annonce_id: suivi.annonce_id,
-                statut: normalizeActivityStatus(suivi.statut),
-                user_id: suivi.user_id,
-                note: suivi.note,
-                date_suivi: suivi.date_suivi,
-              })),
-            ];
+        let activityRows = (actionsResult.data || []).map(action => ({
+          annonce_id: action.annonce_id,
+          statut: action.action_type,
+          user_id: action.user_id,
+          note: action.note,
+          date_suivi: action.scheduled_at || action.updated_at,
+        }));
+
+        if (actionsResult.error && isMissingActivityTableError(actionsResult.error)) {
+          const suiviResult = await withTimeout(
+            applyActivityScopeFilter(
+              supabase
+              .from('suivi_annonce')
+              .select('annonce_id, statut, user_id, note, date_suivi')
+              .in('annonce_id', annonceIds)
+              .order('date_suivi', { ascending: false }),
+              activityScope
+            ),
+            'suivi annonces'
+          );
+          if (suiviResult.error) throw suiviResult.error;
+          if (requestId !== requestIdRef.current) return;
+
+          activityRows = (suiviResult.data || []).map(suivi => ({
+            annonce_id: suivi.annonce_id,
+            statut: normalizeActivityStatus(suivi.statut),
+            user_id: suivi.user_id,
+            note: suivi.note,
+            date_suivi: suivi.date_suivi,
+          }));
+        }
 
         activityRows.forEach(suivi => {
           const statuses = userSuiviStatusMap.get(suivi.annonce_id) || [];
@@ -681,16 +711,6 @@ export const useAnnonces = (
         });
       }
       
-      // Deduplicate annonces based on ID
-      const uniqueAnnoncesMap = new Map<string, Annonce>();
-      newAnnonces.forEach(annonce => {
-        // Use id_annnoce as primary deduplication key, fallback to internal id
-        const dedupeKey = (annonce.id_annnoce && annonce.id_annnoce.trim()) ? annonce.id_annnoce : annonce.id;
-        if (!uniqueAnnoncesMap.has(dedupeKey)) {
-          uniqueAnnoncesMap.set(dedupeKey, annonce);
-        }
-      });
-      newAnnonces = Array.from(uniqueAnnoncesMap.values());
       newAnnonces = newAnnonces.map(annonce => {
         const suiviMeta = userSuiviMetaMap.get(annonce.id);
         const favoriteUserIds = favoriteUserIdsMap.get(annonce.id) || [];
@@ -744,10 +764,15 @@ export const useAnnonces = (
 
       if (requestId !== requestIdRef.current) return;
 
+      const rawTotalCount = countResult.count ?? totalCount;
+      const nextTotalCount = reset
+        ? Math.max(rawTotalCount, newAnnonces.length)
+        : Math.max(rawTotalCount, annonces.length + newAnnonces.length);
+
       if (reset) {
         setAnnonces(newAnnonces);
         setTotalCount(nextTotalCount);
-        setHasMore(newAnnonces.length < nextTotalCount);
+        setHasMore(newAnnonces.length === limit || newAnnonces.length < nextTotalCount);
         setPage(2);
       } else {
         // When adding more annonces, ensure no duplicates with existing ones
@@ -758,7 +783,7 @@ export const useAnnonces = (
           const finalAnnonces = [...prev, ...newUniqueAnnonces];
 
           setTotalCount(nextTotalCount);
-          setHasMore(finalAnnonces.length < nextTotalCount);
+          setHasMore(newUniqueAnnonces.length === limit || finalAnnonces.length < nextTotalCount);
           
           return finalAnnonces;
         });
