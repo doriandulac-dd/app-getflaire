@@ -11,9 +11,12 @@ import {
   Clock,
   Copy,
   ExternalLink,
+  Loader2,
   MapPin,
+  MessageSquare,
   Phone,
   Pencil,
+  Send,
   Square,
   TrendingDown,
   TrendingUp,
@@ -29,7 +32,8 @@ import { gsap } from '../lib/animations';
 import { useAuth } from '../hooks/useAuth';
 import { useActivityScope } from '../hooks/useActivityScope';
 import { savePropertyAction } from '../utils/propertyActivities';
-import { generateCallScripts, generateSmsSuggestions } from '../utils/pigeOutreach';
+import { generateOutreach, type OutreachResult } from '../utils/outreachGeneration';
+import type { OutreachSuggestion } from '../utils/pigeOutreach';
 
 type ModificationLog = {
   id: string;
@@ -84,20 +88,26 @@ const formatDate = (date: string) =>
   }).format(new Date(date));
 
 const parseUrgencyMotifs = (typeUrgence?: string | null) => {
-  if (!typeUrgence || !typeUrgence.trim()) return [];
+  const normalized = (typeUrgence || '').trim();
+  if (!normalized || normalized.toLowerCase() === 'false') return [];
 
   try {
-    if (typeUrgence.startsWith('[')) {
-      const parsed = JSON.parse(typeUrgence);
+    if (normalized.startsWith('[')) {
+      const parsed = JSON.parse(normalized);
       if (Array.isArray(parsed)) {
-        return parsed.filter((motif) => typeof motif === 'string' && motif.trim() !== '');
+        return parsed.filter(
+          (motif) =>
+            typeof motif === 'string' &&
+            motif.trim() !== '' &&
+            motif.trim().toLowerCase() !== 'false'
+        );
       }
     }
   } catch {
-    return [typeUrgence].filter(Boolean);
+    return [normalized].filter((motif) => motif.toLowerCase() !== 'false');
   }
 
-  return [typeUrgence];
+  return [normalized];
 };
 
 const parseSourceDetails = (sourceData: unknown): SourceDetails => {
@@ -492,7 +502,18 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
           </section>
 
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:hidden" data-detail-sidebar>
-            <ContactPanel annonce={annonce} formatDate={formatDate} commercialProfile={appUser?.personalization_settings?.commercial_profile} />
+            <ContactPanel
+              annonce={annonce}
+              formatDate={formatDate}
+              commercialProfile={appUser?.personalization_settings?.commercial_profile}
+              userProfile={{
+                firstName: appUser?.profile.first_name,
+                lastName: appUser?.profile.last_name,
+                phone: appUser?.profile.phone,
+                email: appUser?.email,
+                agencyName: appUser?.agency?.name,
+              }}
+            />
             <div className="mt-5 border-t border-gray-100 pt-5">
               <PropertyActions annonceId={annonce.id} onUpdate={() => {}} />
             </div>
@@ -610,7 +631,18 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
         <aside className="hidden lg:block" data-detail-sidebar>
           <div className="sticky top-24 space-y-5">
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <ContactPanel annonce={annonce} formatDate={formatDate} commercialProfile={appUser?.personalization_settings?.commercial_profile} />
+              <ContactPanel
+                annonce={annonce}
+                formatDate={formatDate}
+                commercialProfile={appUser?.personalization_settings?.commercial_profile}
+                userProfile={{
+                  firstName: appUser?.profile.first_name,
+                  lastName: appUser?.profile.last_name,
+                  phone: appUser?.profile.phone,
+                  email: appUser?.email,
+                  agencyName: appUser?.agency?.name,
+                }}
+              />
             </section>
             <PropertyActions annonceId={annonce.id} onUpdate={() => {}} />
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -642,15 +674,27 @@ const ContactPanel = ({
   annonce,
   formatDate,
   commercialProfile,
+  userProfile,
 }: {
   annonce: PanelAnnonce;
   formatDate: (date: string) => string;
   commercialProfile?: import('../types').CommercialProfileSettings;
+  userProfile?: {
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+    email?: string;
+    agencyName?: string;
+  };
 }) => {
   const sourceDetails = parseSourceDetails(annonce.source_data);
   const contactName = getContactName(sourceDetails);
-  const callScripts = generateCallScripts(annonce, commercialProfile);
-  const smsSuggestions = generateSmsSuggestions(annonce, commercialProfile);
+  const [callScripts, setCallScripts] = useState<OutreachSuggestion[]>([]);
+  const [smsSuggestions, setSmsSuggestions] = useState<OutreachSuggestion[]>([]);
+  const [generationStatus, setGenerationStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [generationMode, setGenerationMode] = useState<'call' | 'sms' | 'both' | null>(null);
+  const [generationSource, setGenerationSource] = useState<OutreachResult['source'] | null>(null);
+  const [generationErrorMessage, setGenerationErrorMessage] = useState<string | null>(null);
 
   const copyPhone = async () => {
     if (!annonce.phone) return;
@@ -670,6 +714,45 @@ const ContactPanel = ({
       toast.error('Impossible de copier le texte');
     }
   };
+
+  const handleGenerate = async (mode: 'call' | 'sms' | 'both') => {
+    if (!annonce.phone) return;
+
+    setGenerationStatus('loading');
+    setGenerationMode(mode);
+    setGenerationErrorMessage(null);
+    try {
+      const result = await generateOutreach({
+        annonce,
+        mode,
+        commercialProfile,
+        userProfile,
+      });
+
+      if (mode === 'call' || mode === 'both') setCallScripts(result.callScripts);
+      if (mode === 'sms' || mode === 'both') setSmsSuggestions(result.smsSuggestions);
+      setGenerationSource(result.source);
+      setGenerationStatus(result.source === 'ai' ? 'success' : 'error');
+
+      if (result.source === 'fallback') {
+        const message = result.fallbackMessage || "IA indisponible. Version locale affichée.";
+        setGenerationErrorMessage(message);
+        toast.error(message);
+      } else {
+        toast.success(mode === 'sms' ? 'SMS générés' : "Scripts d'appel générés");
+      }
+    } catch (error) {
+      console.error('[generate-outreach] unexpected client error', error);
+      setGenerationStatus('error');
+      setGenerationErrorMessage('Impossible de générer les propositions. Vérifiez la fonction Supabase generate-outreach.');
+      toast.error('Impossible de générer les propositions');
+    } finally {
+      setGenerationMode(null);
+    }
+  };
+
+  const loadingCall = generationStatus === 'loading' && generationMode === 'call';
+  const loadingSms = generationStatus === 'loading' && generationMode === 'sms';
 
   return (
     <div>
@@ -693,25 +776,41 @@ const ContactPanel = ({
               {annonce.phone}
             </a>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid gap-2">
             <a
               href={`tel:${annonce.phone}`}
-              className="rounded-lg bg-primary-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-primary-700"
+              className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-primary-600/20 transition hover:bg-primary-700"
             >
+              <Phone className="h-5 w-5" />
               Appeler
             </a>
-            <a
-              href={`sms:${annonce.phone}`}
-              className="rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-xs font-semibold text-primary-700 transition hover:bg-primary-100"
-            >
-              SMS
-            </a>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleGenerate('sms')}
+                disabled={loadingSms}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-xs font-semibold text-primary-700 transition hover:bg-primary-100 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {loadingSms ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+                Générer SMS
+              </button>
+              <button
+                type="button"
+                onClick={() => handleGenerate('call')}
+                disabled={loadingCall}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-secondary-200 bg-white px-3 py-2 text-xs font-semibold text-secondary-700 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {loadingCall ? <Loader2 className="h-4 w-4 animate-spin" /> : <Phone className="h-4 w-4" />}
+                Préparer l'appel
+              </button>
+            </div>
             <button
               type="button"
               onClick={copyPhone}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-secondary-700 transition hover:bg-gray-50"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-secondary-700 transition hover:bg-gray-50"
             >
-              Copier
+              <Copy className="h-4 w-4" />
+              Copier le numéro
             </button>
           </div>
         </div>
@@ -732,8 +831,22 @@ const ContactPanel = ({
         Voir l'annonce originale
       </a>
     </div>
-    {annonce.phone && (
+    {annonce.phone && (callScripts.length > 0 || smsSuggestions.length > 0 || generationStatus === 'loading') && (
       <div className="mt-5 border-t border-gray-100 pt-4 space-y-4">
+        {generationStatus === 'error' && generationSource === 'fallback' && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+            IA indisponible : {generationErrorMessage || "la fonction Supabase n'a pas répondu."} Version locale affichée.
+          </div>
+        )}
+
+        {generationStatus === 'loading' && (
+          <div className="space-y-2">
+            <div className="h-4 w-36 animate-pulse rounded bg-gray-200" />
+            <div className="h-24 animate-pulse rounded-xl bg-gray-100" />
+          </div>
+        )}
+
+        {callScripts.length > 0 && (
         <div>
           <h4 className="text-sm font-semibold text-secondary-900">3 scénarios d'appel</h4>
           <div className="mt-3 space-y-2">
@@ -750,12 +863,15 @@ const ContactPanel = ({
                     Copier
                   </button>
                 </div>
+                {script.angle && <p className="mt-1 text-xs font-medium text-primary-700">{script.angle}</p>}
                 <p className="mt-2 text-sm leading-6 text-secondary-700">{script.body}</p>
               </div>
             ))}
           </div>
         </div>
+        )}
 
+        {smsSuggestions.length > 0 && (
         <div>
           <h4 className="text-sm font-semibold text-secondary-900">3 SMS proposés</h4>
           <div className="mt-3 space-y-2">
@@ -772,11 +888,20 @@ const ContactPanel = ({
                     Copier
                   </button>
                 </div>
+                {sms.angle && <p className="mt-1 text-xs font-medium text-primary-700">{sms.angle}</p>}
                 <p className="mt-2 text-sm leading-6 text-secondary-700">{sms.body}</p>
+                <a
+                  href={`sms:${annonce.phone}?body=${encodeURIComponent(sms.body)}`}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1.5 text-xs font-semibold text-primary-700 transition hover:bg-primary-100"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  Envoyer
+                </a>
               </div>
             ))}
           </div>
         </div>
+        )}
       </div>
     )}
     </div>

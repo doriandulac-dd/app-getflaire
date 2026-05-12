@@ -11,6 +11,13 @@ export interface CommercialProfileSettings {
   promise?: string;
   common_objections?: string;
   sms_signature?: string;
+  network_name?: string;
+  agency_name?: string;
+  is_agency?: boolean;
+  positioning?: string;
+  call_instructions?: string;
+  sms_instructions?: string;
+  preferred_approaches?: string;
 }
 
 export interface PersonalizationSettings {

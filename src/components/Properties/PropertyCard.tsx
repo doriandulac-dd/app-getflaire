@@ -410,15 +410,6 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                     Nouveau
                   </span>
                 )}
-                {annonce.phone ? (
-                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-                    Avec téléphone
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                    Sans téléphone
-                  </span>
-                )}
                 {annonce.maj_prix && (
                   <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
                     Baisse de prix

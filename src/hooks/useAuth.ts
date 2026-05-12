@@ -71,6 +71,13 @@ const normalizePersonalization = (raw: unknown): PersonalizationSettings | undef
           promise: commercialProfile.promise,
           common_objections: commercialProfile.common_objections,
           sms_signature: commercialProfile.sms_signature,
+          network_name: commercialProfile.network_name,
+          agency_name: commercialProfile.agency_name,
+          is_agency: commercialProfile.is_agency,
+          positioning: commercialProfile.positioning,
+          call_instructions: commercialProfile.call_instructions,
+          sms_instructions: commercialProfile.sms_instructions,
+          preferred_approaches: commercialProfile.preferred_approaches,
         }
       : undefined,
   };
