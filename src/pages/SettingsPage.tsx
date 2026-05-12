@@ -19,6 +19,7 @@ import BillingPage from './BillingPage';
 import PageHeader from '../components/UI/PageHeader';
 import SurfacePanel from '../components/UI/SurfacePanel';
 import { useGsapReveal } from '../hooks/useGsapReveal';
+import type { CommercialProfileSettings } from '../types';
 
 type TabId = 'account' | 'preferences' | 'departments' | 'collaboration' | 'personalization' | 'billing';
 
@@ -84,6 +85,14 @@ const SettingsPage: React.FC = () => {
   const [theme, setTheme] = useState<ThemeChoice>(initialTheme);
   const [primaryColor, setPrimaryColor] = useState<PrimaryChoice>(initialPrimary);
   const [savingPersonalization, setSavingPersonalization] = useState(false);
+  const [commercialProfile, setCommercialProfile] = useState<CommercialProfileSettings>({
+    tone: 'conseil',
+    specialty: '',
+    zone: '',
+    promise: '',
+    common_objections: '',
+    sms_signature: '',
+  });
 
   // --------- BILLING STATE ----------
 
@@ -107,6 +116,14 @@ const SettingsPage: React.FC = () => {
     }));
     setTheme(legacyUser?.personalization_settings?.theme || 'light');
     setPrimaryColor(legacyUser?.personalization_settings?.primaryColor || 'orange');
+    setCommercialProfile({
+      tone: legacyUser?.personalization_settings?.commercial_profile?.tone || 'conseil',
+      specialty: legacyUser?.personalization_settings?.commercial_profile?.specialty || '',
+      zone: legacyUser?.personalization_settings?.commercial_profile?.zone || '',
+      promise: legacyUser?.personalization_settings?.commercial_profile?.promise || '',
+      common_objections: legacyUser?.personalization_settings?.commercial_profile?.common_objections || '',
+      sms_signature: legacyUser?.personalization_settings?.commercial_profile?.sms_signature || '',
+    });
   }, [authLoading, appUser, legacyUser]);
 
   // ---- Aperçu instantané thème/couleur ----
@@ -509,6 +526,99 @@ const SettingsPage: React.FC = () => {
                 <option value="50">50</option>
                 <option value="100">100</option>
               </select>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-semibold text-secondary-900 mb-4">Profil commercial Pige</h2>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-secondary-700 mb-2">Ton commercial</label>
+              <select
+                value={commercialProfile.tone || 'conseil'}
+                onChange={(e) => setCommercialProfile(prev => ({ ...prev, tone: e.target.value as CommercialProfileSettings['tone'] }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+              >
+                <option value="conseil">Conseil</option>
+                <option value="direct">Direct</option>
+                <option value="premium">Premium</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-secondary-700 mb-2">Spécialité</label>
+                <input
+                  type="text"
+                  value={commercialProfile.specialty || ''}
+                  onChange={(e) => setCommercialProfile(prev => ({ ...prev, specialty: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="ex: maisons familiales, investisseurs, estimation rapide"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-secondary-700 mb-2">Zone</label>
+                <input
+                  type="text"
+                  value={commercialProfile.zone || ''}
+                  onChange={(e) => setCommercialProfile(prev => ({ ...prev, zone: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                  placeholder="ex: Troyes et première couronne"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-secondary-700 mb-2">Promesse commerciale</label>
+              <textarea
+                value={commercialProfile.promise || ''}
+                onChange={(e) => setCommercialProfile(prev => ({ ...prev, promise: e.target.value }))}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                placeholder="ex: Je donne un avis marché clair et les points qui déclenchent les visites."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-secondary-700 mb-2">Objections fréquentes</label>
+              <textarea
+                value={commercialProfile.common_objections || ''}
+                onChange={(e) => setCommercialProfile(prev => ({ ...prev, common_objections: e.target.value }))}
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                placeholder="ex: je préfère vendre seul, je veux attendre un peu, j'ai déjà des appels"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-secondary-700 mb-2">Signature SMS</label>
+              <input
+                type="text"
+                value={commercialProfile.sms_signature || ''}
+                onChange={(e) => setCommercialProfile(prev => ({ ...prev, sms_signature: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-primary-500 focus:border-primary-500"
+                placeholder="ex: Dorian - GetFlaire"
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={async () => {
+                  const { error } = await updatePersonalizationSettings({ commercial_profile: commercialProfile });
+                  if (error) {
+                    toast.error(error.message);
+                    return;
+                  }
+                  await refreshAppUser(appUser?.id);
+                  toast.success('Profil commercial sauvegardé');
+                }}
+                className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700 transition-colors"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                Sauvegarder le profil commercial
+              </button>
             </div>
           </div>
         </div>

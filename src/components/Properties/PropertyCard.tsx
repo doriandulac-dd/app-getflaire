@@ -417,6 +417,11 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                     Modifie
                   </span>
                 )}
+                {Boolean(annonce.duplicate_count) && (annonce.duplicate_count || 0) > 1 && (
+                  <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+                    Doublon possible
+                  </span>
+                )}
                 {currentStatus.favorite && (
                   <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
                     Favori

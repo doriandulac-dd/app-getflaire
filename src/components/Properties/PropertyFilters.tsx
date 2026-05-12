@@ -166,7 +166,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
               <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-secondary-400" />
               <input
                 type="text"
-                placeholder="Titre, description, ville, telephone, source..."
+                placeholder="Titre, contact, description, ville, telephone, source..."
                 value={filters.search || ''}
                 onChange={(e) => handleFilterChange('search', e.target.value || undefined)}
                 className="h-12 w-full rounded-2xl border border-gray-200 bg-white pl-11 pr-4 text-sm shadow-sm focus:border-primary-400 focus:ring-primary-500"

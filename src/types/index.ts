@@ -2,12 +2,23 @@
 export type ThemeName = 'blue' | 'green' | 'purple' | 'orange';
 export type ColorMode = 'light' | 'dark' | 'system';
 export type UserRole = 'admin' | 'agent' | 'independant';
+export type CommercialTone = 'direct' | 'conseil' | 'premium';
+
+export interface CommercialProfileSettings {
+  tone?: CommercialTone;
+  specialty?: string;
+  zone?: string;
+  promise?: string;
+  common_objections?: string;
+  sms_signature?: string;
+}
 
 export interface PersonalizationSettings {
   mode?: ColorMode;  // clair/sombre/système
   primaryColor?: ThemeName; // couleur principale
   theme?: ThemeName | ColorMode; // legacy: anciennes données stockées
   items_per_page?: number; // nombre d'annonces par page
+  commercial_profile?: CommercialProfileSettings;
 }
 
 // ---------- Utilisateurs / Agences ----------
@@ -92,6 +103,9 @@ export interface Annonce {
   activity_date?: string;
   favorite_user_ids?: string[];
   favorite_actors?: string[];
+  source_data?: unknown;
+  id_annnoce?: string | null;
+  duplicate_count?: number;
 }
 
 export interface AnnonceStatus {

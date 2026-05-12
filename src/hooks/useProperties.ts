@@ -128,6 +128,28 @@ const normalizeText = (value?: string | null) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]/g, '');
 
+const parseSourceDetails = (sourceData: unknown) => {
+  try {
+    if (sourceData && typeof sourceData === 'string') return JSON.parse(sourceData) as Record<string, unknown>;
+    if (sourceData && typeof sourceData === 'object') return sourceData as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+  return {};
+};
+
+const getContactName = (sourceData: unknown) => {
+  const details = parseSourceDetails(sourceData);
+  const candidateKeys = ['contact_name', 'contactName', 'nom_contact', 'seller_name', 'owner_name', 'name'];
+
+  for (const key of candidateKeys) {
+    const value = details[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+
+  return '';
+};
+
 const getPropertyTypeAliases = (type: string) => {
   const aliases = PROPERTY_TYPE_ALIASES[type] || [type];
   return aliases.map(normalizePropertyType);
@@ -343,7 +365,9 @@ export const useAnnonces = (
         let scopedQuery: any = baseQuery;
 
         if (filters.search) {
-          scopedQuery = scopedQuery.or(`title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,city.ilike.%${filters.search}%,phone.ilike.%${filters.search}%,source.ilike.%${filters.search}%`);
+          scopedQuery = scopedQuery.or(
+            `title.ilike.%${filters.search}%,description.ilike.%${filters.search}%,city.ilike.%${filters.search}%,phone.ilike.%${filters.search}%,source.ilike.%${filters.search}%,source_data->>contact_name.ilike.%${filters.search}%,source_data->>owner_name.ilike.%${filters.search}%,source_data->>seller_name.ilike.%${filters.search}%`
+          );
         }
 
         if (filters.property_types?.length && !filters.property_types.includes('Autre')) {
@@ -504,6 +528,19 @@ export const useAnnonces = (
         newAnnonces = newAnnonces.filter(annonce =>
           matchesPropertyTypeFilter(annonce, filters.property_types)
         );
+      }
+
+      if (filters.search) {
+        const searchTerm = normalizeText(filters.search);
+        newAnnonces = newAnnonces.filter((annonce) => {
+          const contactName = normalizeText(getContactName(annonce.source_data));
+          return !contactName || contactName.includes(searchTerm)
+            || normalizeText(annonce.title).includes(searchTerm)
+            || normalizeText(annonce.description).includes(searchTerm)
+            || normalizeText(annonce.city).includes(searchTerm)
+            || normalizeText(annonce.phone).includes(searchTerm)
+            || normalizeText(annonce.source).includes(searchTerm);
+        });
       }
 
       newAnnonces = newAnnonces.filter(annonce =>
@@ -667,6 +704,24 @@ export const useAnnonces = (
           activity_date: suiviMeta?.date_suivi,
           favorite_user_ids: favoriteUserIds.length ? favoriteUserIds : undefined,
           favorite_actors: favoriteActors.length ? favoriteActors : undefined,
+        };
+      });
+
+      const duplicateMap = new Map<string, number>();
+      newAnnonces.forEach((annonce) => {
+        const duplicateKey = normalizeText(
+          `${annonce.city}|${annonce.postal_code}|${annonce.price}|${annonce.size}|${annonce.title}`
+        );
+        duplicateMap.set(duplicateKey, (duplicateMap.get(duplicateKey) || 0) + 1);
+      });
+
+      newAnnonces = newAnnonces.map((annonce) => {
+        const duplicateKey = normalizeText(
+          `${annonce.city}|${annonce.postal_code}|${annonce.price}|${annonce.size}|${annonce.title}`
+        );
+        return {
+          ...annonce,
+          duplicate_count: duplicateMap.get(duplicateKey) || 1,
         };
       });
 

@@ -8,6 +8,7 @@ import {
   PersonalizationSettings,
   Agency,
   UserRole,
+  CommercialProfileSettings,
 } from '../types';
 
 type AppUser = CoreUser & {
@@ -57,10 +58,21 @@ const normalizeRole = (role: unknown): UserRole => {
 const normalizePersonalization = (raw: unknown): PersonalizationSettings | undefined => {
   if (!raw || typeof raw !== 'object') return undefined;
   const settings = raw as Partial<PersonalizationSettings>;
+  const commercialProfile = settings.commercial_profile as CommercialProfileSettings | undefined;
   return {
     mode: settings.mode ?? (settings.theme === 'dark' || settings.theme === 'system' ? settings.theme : 'light'),
     primaryColor: settings.primaryColor ?? (settings.theme === 'blue' || settings.theme === 'green' || settings.theme === 'purple' || settings.theme === 'orange' ? settings.theme : 'orange'),
     items_per_page: settings.items_per_page,
+    commercial_profile: commercialProfile
+      ? {
+          tone: commercialProfile.tone,
+          specialty: commercialProfile.specialty,
+          zone: commercialProfile.zone,
+          promise: commercialProfile.promise,
+          common_objections: commercialProfile.common_objections,
+          sms_signature: commercialProfile.sms_signature,
+        }
+      : undefined,
   };
 };
 

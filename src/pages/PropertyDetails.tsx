@@ -28,6 +28,7 @@ import { gsap } from '../lib/animations';
 import { useAuth } from '../hooks/useAuth';
 import { useActivityScope } from '../hooks/useActivityScope';
 import { savePropertyAction } from '../utils/propertyActivities';
+import { generateCallScripts, generateSmsSuggestions } from '../utils/pigeOutreach';
 
 type ModificationLog = {
   id: string;
@@ -490,7 +491,7 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
           </section>
 
           <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm lg:hidden" data-detail-sidebar>
-            <ContactPanel annonce={annonce} formatDate={formatDate} />
+            <ContactPanel annonce={annonce} formatDate={formatDate} commercialProfile={appUser?.personalization_settings?.commercial_profile} />
             <div className="mt-5 border-t border-gray-100 pt-5">
               <PropertyActions annonceId={annonce.id} onUpdate={() => {}} />
             </div>
@@ -608,7 +609,7 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
         <aside className="hidden lg:block" data-detail-sidebar>
           <div className="sticky top-24 space-y-5">
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-              <ContactPanel annonce={annonce} formatDate={formatDate} />
+              <ContactPanel annonce={annonce} formatDate={formatDate} commercialProfile={appUser?.personalization_settings?.commercial_profile} />
             </section>
             <PropertyActions annonceId={annonce.id} onUpdate={() => {}} />
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
@@ -637,12 +638,16 @@ type PanelAnnonce = Annonce & {
 const ContactPanel = ({
   annonce,
   formatDate,
+  commercialProfile,
 }: {
   annonce: PanelAnnonce;
   formatDate: (date: string) => string;
+  commercialProfile?: import('../types').CommercialProfileSettings;
 }) => {
   const sourceDetails = parseSourceDetails(annonce.source_data);
   const contactName = getContactName(sourceDetails);
+  const callScripts = generateCallScripts(annonce, commercialProfile);
+  const smsSuggestions = generateSmsSuggestions(annonce, commercialProfile);
 
   const copyPhone = async () => {
     if (!annonce.phone) return;
@@ -715,6 +720,33 @@ const ContactPanel = ({
         Voir l'annonce originale
       </a>
     </div>
+    {annonce.phone && (
+      <div className="mt-5 border-t border-gray-100 pt-4 space-y-4">
+        <div>
+          <h4 className="text-sm font-semibold text-secondary-900">3 scenarios d'appel</h4>
+          <div className="mt-3 space-y-2">
+            {callScripts.map((script) => (
+              <div key={script.title} className="rounded-xl border border-gray-100 bg-slate-50 px-3 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-secondary-500">{script.title}</p>
+                <p className="mt-2 text-sm leading-6 text-secondary-700">{script.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-semibold text-secondary-900">3 SMS proposes</h4>
+          <div className="mt-3 space-y-2">
+            {smsSuggestions.map((sms) => (
+              <div key={sms.title} className="rounded-xl border border-gray-100 bg-white px-3 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-secondary-500">{sms.title}</p>
+                <p className="mt-2 text-sm leading-6 text-secondary-700">{sms.body}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
     </div>
   );
 };
