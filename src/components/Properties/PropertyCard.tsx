@@ -18,6 +18,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useSurveillance } from '../../hooks/useSurveillance';
 import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
+import { deletePropertyStatus, fetchPropertyStatus, savePropertyStatus } from '../../utils/propertyStatus';
 
 interface PropertyCardProps {
   annonce: Annonce;
@@ -138,14 +139,11 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
     if (!appUser) return;
 
     try {
-      const { data: suiviData } = await supabase
-        .from('suivi_annonce')
-        .select('*')
-        .eq('annonce_id', annonce.id)
-        .in('user_id', activityScope.userIds)
-        .order('date_suivi', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const suiviData = await fetchPropertyStatus({
+        annonceId: annonce.id,
+        userId: appUser.id,
+        activityScope,
+      });
 
       const { data: favoriteData } = await supabase
         .from('favoris')
@@ -247,27 +245,21 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         else if (statusKey === 'to_process') statut = 'to_process';
         else if (statusKey === 'hidden') statut = 'hidden';
 
-        const payload = {
-          annonce_id: annonce.id,
-          user_id: appUser.id,
-          agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
+        const data = await savePropertyStatus({
+          annonceId: annonce.id,
+          userId: appUser.id,
+          activityScope,
           statut,
-          date_suivi: new Date().toISOString(),
-        };
+        });
 
-        const result = currentSuiviId
-          ? await supabase.from('suivi_annonce').update(payload).eq('id', currentSuiviId).select('id').single()
-          : await supabase.from('suivi_annonce').insert(payload).select('id').single();
-        const { data, error } = result;
-
-        if (error) throw error;
-        if (data?.id) setCurrentSuiviId(data.id);
+        setCurrentSuiviId(data.id);
         toast.success(`Statut mis a jour : ${statusConfig[statusKey].label}`);
       }
 
       await fetchCurrentStatus();
       onStatusChange?.(annonce.id, statusKey as AnnonceStatus['status']);
-    } catch {
+    } catch (error) {
+      console.error('[status-update] card update failed', error);
       toast.error('Erreur lors de la mise a jour du statut');
     } finally {
       setLoading(false);
@@ -275,6 +267,8 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
   };
 
   const handleToggleStatus = async (statusKey: keyof typeof currentStatus) => {
+    if (!appUser) return;
+
     if (statusKey === 'favorite') {
       await handleStatusChange('favorite');
     } else {
@@ -288,16 +282,15 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         }
         setLoading(true);
         try {
-          const { error } = await supabase
-            .from('suivi_annonce')
-            .delete()
-            .eq('id', currentSuiviId || '')
-            .in('user_id', activityScope.userIds);
-
-          if (error) throw error;
+          await deletePropertyStatus({
+            annonceId: annonce.id,
+            userId: appUser.id,
+            activityScope,
+          });
           await fetchCurrentStatus();
           toast.success('Statut supprime');
-        } catch {
+        } catch (error) {
+          console.error('[status-update] card delete failed', error);
           toast.error('Erreur lors de la suppression du statut');
         } finally {
           setLoading(false);

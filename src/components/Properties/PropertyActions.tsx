@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
+import { deletePropertyStatus, fetchPropertyStatus, savePropertyStatus } from '../../utils/propertyStatus';
 
 interface PropertyStatus {
   favorite: boolean;
@@ -50,7 +51,6 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
   const [rdvDate, setRdvDate] = useState('');
   const [rdvTime, setRdvTime] = useState('');
   const [loading, setLoading] = useState(false);
-  const [currentSuiviId, setCurrentSuiviId] = useState<string | null>(null);
   const [currentFavoriteId, setCurrentFavoriteId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,19 +63,13 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
     if (!appUser) return;
 
     try {
-      const { data, error } = await supabase
-        .from('suivi_annonce')
-        .select('*')
-        .eq('annonce_id', annonceId)
-        .in('user_id', activityScope.userIds)
-        .order('date_suivi', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (error) throw error;
+      const data = await fetchPropertyStatus({
+        annonceId,
+        userId: appUser.id,
+        activityScope,
+      });
 
       if (data) {
-        setCurrentSuiviId(data.id);
         setStatusActor(activityScope.formatActor(data.user_id));
         const newStatus: PropertyStatus = {
           favorite: false, // Will be set by fetchFavoriteStatus
@@ -90,7 +84,6 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
         setStatus(newStatus);
         setComment(data.note || '');
       } else {
-        setCurrentSuiviId(null);
         setStatusActor(null);
       }
     } catch (error) {
@@ -181,41 +174,37 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
       else if (newStatus.to_call) mainStatus = 'to_call';
       else if (newStatus.to_process) mainStatus = 'to_process';
 
-      const updateData: any = {
-        annonce_id: annonceId,
-        user_id: appUser.id,
-        agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
-        statut: mainStatus,
-        note: newComment,
-        date_suivi: new Date().toISOString(),
-      };
-
-      // Include the current suivi ID for upsert
-      if (currentSuiviId) {
-        updateData.id = currentSuiviId;
-      }
-
+      let dateSuivi = new Date().toISOString();
       // Add specific dates
       if (newStatus.called && !status.called) {
-        updateData.date_suivi = new Date().toISOString();
+        dateSuivi = new Date().toISOString();
       } else if (newStatus.to_call && newStatus.reminder_date) {
-        updateData.date_suivi = newStatus.reminder_date;
+        dateSuivi = newStatus.reminder_date;
+      } else if (newStatus.rdv && newStatus.rdv_date) {
+        dateSuivi = newStatus.rdv_date;
       }
 
-      const result = currentSuiviId
-        ? await supabase.from('suivi_annonce').update(updateData).eq('id', currentSuiviId).select('id').single()
-        : await supabase.from('suivi_annonce').insert(updateData).select('id').single();
-      const { data, error } = result;
+      if (!mainStatus) {
+        await deletePropertyStatus({ annonceId, userId: appUser.id, activityScope });
+        setStatusActor(null);
+      } else {
+        const data = await savePropertyStatus({
+          annonceId,
+          userId: appUser.id,
+          activityScope,
+          statut: mainStatus,
+          note: newComment,
+          dateSuivi,
+        });
 
-      if (error) throw error;
-
-      if (data?.id) setCurrentSuiviId(data.id);
+        setStatusActor(activityScope.formatActor(data.user_id));
+      }
       setStatus(newStatus);
       setComment(newComment);
-      setStatusActor(activityScope.formatActor(appUser.id));
       onUpdate?.(newStatus, newComment);
       toast.success('Statut mis à jour');
     } catch (error) {
+      console.error('[status-update] actions update failed', error);
       toast.error('Erreur lors de la mise à jour');
     } finally {
       setLoading(false);
