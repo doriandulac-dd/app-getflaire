@@ -4,6 +4,9 @@ import { supabase } from '../lib/supabase';
 import { Annonce, Client } from '../types';
 import { useAuth } from './useAuth';
 import { useActivityScope } from './useActivityScope';
+import { savePropertyFavorite } from '../utils/propertyFavorites';
+import { savePropertyStatus } from '../utils/propertyStatus';
+import type { PropertyStatusValue } from '../utils/propertyStatus';
 import {
   AlertMatchResult,
   AlertNotification,
@@ -569,51 +572,19 @@ export const useSmartAlerts = () => {
 
   const addFavorite = async (annonceId: string, resultId?: string) => {
     if (!appUser) throw new Error('Utilisateur introuvable');
-    const { data: existing, error: existingError } = await supabase
-      .from('favoris')
-      .select('id')
-      .eq('annonce_id', annonceId)
-      .eq('user_id', appUser.id)
-      .maybeSingle();
-    if (existingError) throw existingError;
-    if (!existing) {
-      const { error: queryError } = await supabase
-        .from('favoris')
-        .insert({
-          annonce_id: annonceId,
-          user_id: appUser.id,
-          agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
-          date_favoris: new Date().toISOString(),
-        });
-      if (queryError) throw queryError;
-    }
+    await savePropertyFavorite({ annonceId, userId: appUser.id, activityScope });
     if (resultId) await updateResultStatus(resultId, 'favorite');
     toast.success('Ajouté aux favoris');
   };
 
   const addToFollowUp = async (annonceId: string, resultId?: string, statut = 'to_process') => {
     if (!appUser) throw new Error('Utilisateur introuvable');
-    const { data: existing, error: existingError } = await supabase
-      .from('suivi_annonce')
-      .select('id')
-      .eq('annonce_id', annonceId)
-      .in('user_id', activityScope.userIds.length ? activityScope.userIds : [appUser.id])
-      .order('date_suivi', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (existingError) throw existingError;
-
-    const payload = {
-      annonce_id: annonceId,
-      user_id: appUser.id,
-      agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
-      statut,
-      date_suivi: new Date().toISOString(),
-    };
-    const { error: queryError } = existing
-      ? await supabase.from('suivi_annonce').update(payload).eq('id', existing.id)
-      : await supabase.from('suivi_annonce').insert(payload);
-    if (queryError) throw queryError;
+    await savePropertyStatus({
+      annonceId,
+      userId: appUser.id,
+      activityScope,
+      statut: statut as PropertyStatusValue,
+    });
     if (resultId) await updateResultStatus(resultId, 'followed');
     toast.success(statut === 'to_call' ? 'Rappel préparé' : 'Ajouté au suivi');
   };

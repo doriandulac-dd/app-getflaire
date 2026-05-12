@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../hooks/useAuth';
 import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
+import { deletePropertyFavorite, fetchPropertyFavorites, savePropertyFavorite } from '../../utils/propertyFavorites';
 import { deletePropertyStatus, fetchPropertyStatus, savePropertyStatus } from '../../utils/propertyStatus';
 
 interface PropertyStatus {
@@ -95,13 +96,11 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
     if (!appUser) return;
 
     try {
-      const { data, error } = await supabase
-        .from('favoris')
-        .select('*')
-        .eq('annonce_id', annonceId)
-        .in('user_id', activityScope.userIds);
-
-      if (error) throw error;
+      const data = await fetchPropertyFavorites({
+        annonceId,
+        userId: appUser.id,
+        activityScope,
+      });
 
       const ownFavorite = data?.find(favorite => favorite.user_id === appUser.id) || null;
       setFavoriteActors((data || []).map(favorite => activityScope.formatActor(favorite.user_id)));
@@ -124,30 +123,14 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
     try {
       if (currentFavoriteId) {
         // Remove from favorites
-        const { error } = await supabase
-          .from('favoris')
-          .delete()
-          .eq('id', currentFavoriteId);
-
-        if (error) throw error;
+        await deletePropertyFavorite({ annonceId, userId: appUser.id, activityScope });
 
         setCurrentFavoriteId(null);
         setStatus(prev => ({ ...prev, favorite: false }));
         toast.success('Retiré des favoris');
       } else {
         // Add to favorites
-        const { data, error } = await supabase
-          .from('favoris')
-          .insert({
-            annonce_id: annonceId,
-            user_id: appUser.id,
-            agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
-            date_favoris: new Date().toISOString(),
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
+        const data = await savePropertyFavorite({ annonceId, userId: appUser.id, activityScope });
 
         setCurrentFavoriteId(data.id);
         setStatus(prev => ({ ...prev, favorite: true }));
@@ -156,6 +139,7 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
 
       onUpdate?.(status, comment);
     } catch (error) {
+      console.error('[favorite-update] actions update failed', error);
       toast.error('Erreur lors de la mise à jour des favoris');
     } finally {
       setLoading(false);

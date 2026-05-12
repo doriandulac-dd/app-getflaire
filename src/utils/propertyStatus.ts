@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
-import { ActivityScope } from '../hooks/useActivityScope';
+import type { ActivityScope } from '../hooks/useActivityScope';
 
-type PropertyStatusValue = 'to_process' | 'to_call' | 'called' | 'hidden' | 'rdv' | null;
+export type PropertyStatusValue = 'to_process' | 'to_call' | 'called' | 'hidden' | 'rdv' | null;
 
 export type PropertyStatusRow = {
   id: string;

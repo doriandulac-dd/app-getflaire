@@ -18,6 +18,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { useSurveillance } from '../../hooks/useSurveillance';
 import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
+import { deletePropertyFavorite, fetchPropertyFavorites, savePropertyFavorite } from '../../utils/propertyFavorites';
 import { deletePropertyStatus, fetchPropertyStatus, savePropertyStatus } from '../../utils/propertyStatus';
 
 interface PropertyCardProps {
@@ -145,11 +146,11 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         activityScope,
       });
 
-      const { data: favoriteData } = await supabase
-        .from('favoris')
-        .select('*')
-        .eq('annonce_id', annonce.id)
-        .in('user_id', activityScope.userIds);
+      const favoriteData = await fetchPropertyFavorites({
+        annonceId: annonce.id,
+        userId: appUser.id,
+        activityScope,
+      });
 
       const ownFavorite = favoriteData?.find(favorite => favorite.user_id === appUser.id) || null;
       setCurrentSuiviId(suiviData?.id || null);
@@ -219,23 +220,18 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
     try {
       if (statusKey === 'favorite') {
         if (currentOwnFavoriteId) {
-          const { error } = await supabase
-            .from('favoris')
-            .delete()
-            .eq('id', currentOwnFavoriteId)
-            .eq('user_id', appUser.id);
-
-          if (error) throw error;
+          await deletePropertyFavorite({
+            annonceId: annonce.id,
+            userId: appUser.id,
+            activityScope,
+          });
           toast.success('Retire des favoris');
         } else {
-          const { error } = await supabase.from('favoris').insert({
-            annonce_id: annonce.id,
-            user_id: appUser.id,
-            agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
-            date_favoris: new Date().toISOString(),
+          await savePropertyFavorite({
+            annonceId: annonce.id,
+            userId: appUser.id,
+            activityScope,
           });
-
-          if (error) throw error;
           toast.success('Ajoute aux favoris');
         }
       } else {
@@ -259,8 +255,8 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
       await fetchCurrentStatus();
       onStatusChange?.(annonce.id, statusKey as AnnonceStatus['status']);
     } catch (error) {
-      console.error('[status-update] card update failed', error);
-      toast.error('Erreur lors de la mise a jour du statut');
+      console.error(statusKey === 'favorite' ? '[favorite-update] card update failed' : '[status-update] card update failed', error);
+      toast.error(statusKey === 'favorite' ? 'Erreur lors de la mise a jour du favori' : 'Erreur lors de la mise a jour du statut');
     } finally {
       setLoading(false);
     }
