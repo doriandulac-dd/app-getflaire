@@ -629,7 +629,7 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
         </main>
 
         <aside className="hidden lg:block" data-detail-sidebar>
-          <div className="sticky top-24 space-y-5">
+          <div className="space-y-5">
             <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
               <ContactPanel
                 annonce={annonce}
