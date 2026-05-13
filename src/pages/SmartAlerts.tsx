@@ -216,7 +216,9 @@ const SmartAlerts: React.FC = () => {
     const filtered = results.filter(result => {
       const cityOk = !resultFilter.city || result.annonce?.city?.toLowerCase().includes(resultFilter.city.toLowerCase());
       const scoreOk = result.score_pertinence >= resultFilter.minScore;
-      const statusOk = resultFilter.status === 'all' || result.statut_commercial === resultFilter.status;
+      const statusOk = resultFilter.status === 'all'
+        ? result.statut_commercial !== 'ignored'
+        : result.statut_commercial === resultFilter.status;
       const typeOk = !resultFilter.type || result.annonce?.type_de_bien?.toLowerCase().includes(resultFilter.type.toLowerCase());
       const budgetOk = budgetMax === undefined || (result.annonce?.price || 0) <= budgetMax;
       return cityOk && scoreOk && statusOk && typeOk && budgetOk;
@@ -410,6 +412,11 @@ const SmartAlerts: React.FC = () => {
     }
   };
 
+  const handleIgnoreResult = async (resultId: string) => {
+    await updateResultStatus(resultId, 'ignored');
+    toast.success('Annonce ignorée');
+  };
+
   const handleNotificationOpen = (notification: typeof notifications[number]) => {
     const alerteId = notification.contenu.alerte_id;
     if (alerteId) setSelectedAlertId(alerteId);
@@ -515,7 +522,7 @@ const SmartAlerts: React.FC = () => {
               <button onClick={() => updateResultStatus(result.id, 'sent')} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-secondary-700 hover:bg-gray-50">
                 <Send className="mr-2 h-4 w-4" /> Marquer envoyée
               </button>
-              <button onClick={() => updateResultStatus(result.id, 'ignored')} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-secondary-500 hover:bg-gray-50">
+              <button onClick={() => handleIgnoreResult(result.id)} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-secondary-500 hover:bg-gray-50">
                 <XCircle className="mr-2 h-4 w-4" /> Ignorer
               </button>
             </div>
