@@ -85,6 +85,92 @@ const resolveScoreWeights = (weights?: Partial<ScoreWeights>): ScoreWeights => (
 const weightedPoints = (ratio: number, maxPoints: number) =>
   Math.max(0, Math.min(maxPoints, Math.round(ratio * maxPoints)));
 
+const heavyWorksKeywords = [
+  'ruine',
+  'a renover',
+  'renovation complete',
+  'gros travaux',
+  'travaux a prevoir',
+  'entierement a renover',
+  'maison a restaurer',
+  'a restaurer',
+  'non habitable',
+  'inhabitable',
+  'chantier',
+  'plateau brut',
+  'grange a renover',
+  'hors d eau',
+  'hors d air',
+];
+
+const stringifySourceData = (sourceData: unknown) => {
+  if (!sourceData || typeof sourceData !== 'object') return '';
+  try {
+    return JSON.stringify(sourceData);
+  } catch {
+    return '';
+  }
+};
+
+const hasCityMatch = (city: string, target: string) =>
+  Boolean(target && (city === target || city.includes(target)));
+
+const getForbiddenWorkKeywords = (criteria: SmartAlertCriteria) => {
+  const configured = criteria.forbiddenWorks || [];
+  if (criteria.condition !== 'any' || configured.length) {
+    return Array.from(new Set([...configured, ...heavyWorksKeywords].map(normalizeText).filter(Boolean)));
+  }
+  return configured.map(normalizeText).filter(Boolean);
+};
+
+const getHardRejectionReasons = (
+  alert: Pick<SmartAlertFormData, 'ville' | 'postal_codes' | 'radius_km' | 'options_avancees'>,
+  annonce: Annonce,
+  criteria: SmartAlertCriteria,
+  text: string
+) => {
+  const reasons: string[] = [];
+  const city = normalizeText(annonce.city);
+  const postalCode = normalizeText(annonce.postal_code);
+  const mainCity = normalizeText(alert.ville);
+  const postalCodes = (alert.postal_codes || []).map(normalizeText).filter(Boolean);
+  const acceptedCities = criteria.acceptedCities.map(normalizeText).filter(Boolean);
+  const excludedCities = criteria.excludedCities.map(normalizeText).filter(Boolean);
+  const hasConfiguredLocation = Boolean(mainCity || postalCodes.length || acceptedCities.length);
+  const hasExplicitExtendedArea = Number(alert.radius_km || 0) > 0 || acceptedCities.length > 0;
+  const requiresExactLocation = Boolean(
+    mainCity &&
+    !hasExplicitExtendedArea &&
+    (criteria.locationImportance === 'required' || criteria.searchMode !== 'opportunity')
+  );
+
+  if (excludedCities.some(excluded => hasCityMatch(city, excluded))) {
+    reasons.push('Commune exclue');
+  }
+
+  if (postalCodes.length && postalCode && !postalCodes.some(code => postalCode.startsWith(code))) {
+    reasons.push('Code postal hors zone demandée');
+  }
+
+  if (requiresExactLocation && !hasCityMatch(city, mainCity)) {
+    reasons.push('Hors ville demandée');
+  }
+
+  if (!requiresExactLocation && hasConfiguredLocation && criteria.locationImportance === 'required') {
+    const acceptedByLocation =
+      (mainCity && hasCityMatch(city, mainCity)) ||
+      acceptedCities.some(accepted => hasCityMatch(city, accepted)) ||
+      (postalCodes.length && postalCodes.some(code => postalCode.startsWith(code)));
+    if (!acceptedByLocation) reasons.push('Hors zone obligatoire');
+  }
+
+  if (getForbiddenWorkKeywords(criteria).some(keyword => text.includes(keyword))) {
+    reasons.push('Travaux interdits mentionnés');
+  }
+
+  return reasons;
+};
+
 export const getSmartAlertBadge = (score: number) => {
   if (score >= 90) return { label: 'Match excellent', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
   if (score >= 75) return { label: 'Très pertinent', tone: 'bg-blue-100 text-blue-800 border-blue-200' };
@@ -104,7 +190,7 @@ export const parseNaturalLanguageCriteria = (text: string): Partial<SmartAlertFo
   const priceMatch = normalized.match(/(?:budget|max|maximum|jusqu.?a|moins de)\D{0,12}(\d{2,3})(?:\s?000|k)/);
   const surfaceMatch = normalized.match(/(\d{2,3})\s?m/);
   const bedroomMatch = normalized.match(/(\d+)\s?(?:chambre|chambres)/);
-  const cityMatch = normalized.match(/(?:autour de|a|sur|proche de)\s+([a-z-\s]+?)(?:,| avec| minimum| min| budget| proche|$)/);
+  const cityMatch = normalized.match(/\b(autour de|proche de|pres de|a|sur)\s+([a-z-\s]+?)(?:,| avec| minimum| min| budget| proche| sans| peu| travaux|$)/);
   const criteria: Partial<SmartAlertFormData> = {};
   const options: Partial<SmartAlertCriteria> = {};
 
@@ -115,8 +201,16 @@ export const parseNaturalLanguageCriteria = (text: string): Partial<SmartAlertFo
   if (surfaceMatch) criteria.surface_min = Number(surfaceMatch[1]);
   if (bedroomMatch) criteria.bedrooms_min = Number(bedroomMatch[1]);
   if (cityMatch) {
-    const city = cityMatch[1].trim().replace(/\s+/g, ' ');
+    const locationPrefix = cityMatch[1];
+    const city = cityMatch[2].trim().replace(/\s+/g, ' ');
     criteria.ville = city.charAt(0).toUpperCase() + city.slice(1);
+    if (locationPrefix.includes('autour') || locationPrefix.includes('proche') || locationPrefix.includes('pres')) {
+      options.locationImportance = 'high';
+      criteria.radius_km = 10;
+    } else {
+      options.locationImportance = 'required';
+      criteria.radius_km = 0;
+    }
   }
   if (normalized.includes('jardin')) options.exterior = 'required';
   if (normalized.includes('garage')) {
@@ -125,9 +219,12 @@ export const parseNaturalLanguageCriteria = (text: string): Partial<SmartAlertFo
   if (normalized.includes('ecole')) {
     options.positiveKeywords = [{ value: 'proche écoles', importance: 'medium' }];
   }
-  if (normalized.includes('sans travaux') || normalized.includes('peu de travaux')) {
+  if (normalized.includes('sans travaux')) {
+    options.condition = 'ready';
+    options.forbiddenWorks = heavyWorksKeywords;
+  } else if (normalized.includes('peu de travaux')) {
     options.condition = 'light';
-    options.forbiddenWorks = ['gros travaux'];
+    options.forbiddenWorks = heavyWorksKeywords;
   }
 
   return {
@@ -147,7 +244,7 @@ export const scoreAnnonceForAlert = (
   const criteria = { ...defaultSmartAlertCriteria, ...alert.options_avancees };
   const weights = resolveScoreWeights(criteria.scoreWeights);
   const totalWeight = Math.max(1, Object.values(weights).reduce((sum, value) => sum + value, 0));
-  const text = normalizeText(`${annonce.title} ${annonce.description} ${annonce.city} ${annonce.postal_code || ''} ${annonce.type_de_bien} ${annonce.owner_type || ''} ${annonce.dpe || ''}`);
+  const text = normalizeText(`${annonce.title} ${annonce.description} ${annonce.city} ${annonce.postal_code || ''} ${annonce.type_de_bien} ${annonce.owner_type || ''} ${annonce.dpe || ''} ${stringifySourceData(annonce.source_data)}`);
   const pointsForts: string[] = [];
   const pointsFaibles: string[] = [];
   const breakdown: ScoreBreakdown = {
@@ -167,6 +264,17 @@ export const scoreAnnonceForAlert = (
   const postalCodes = (alert.postal_codes || []).map(normalizeText).filter(Boolean);
   const acceptedCities = criteria.acceptedCities.map(normalizeText).filter(Boolean);
   const excludedCities = criteria.excludedCities.map(normalizeText).filter(Boolean);
+  const rejectionReasons = getHardRejectionReasons(alert, annonce, criteria, text);
+
+  if (rejectionReasons.length) {
+    return {
+      score: 0,
+      breakdown,
+      pointsForts,
+      pointsFaibles: rejectionReasons.slice(0, 5),
+      resume: `Annonce écartée automatiquement: ${rejectionReasons.join(', ')}.`,
+    };
+  }
 
   if (excludedCities.some(excluded => city.includes(excluded))) {
     pointsFaibles.push('Commune exclue dans la recherche');
@@ -251,7 +359,7 @@ export const scoreAnnonceForAlert = (
   }
   if (parkingMatches.length) pointsForts.push('Stationnement ou annexe détecté');
 
-  const forbiddenFound = criteria.forbiddenWorks.some(work => text.includes(normalizeText(work)));
+  const forbiddenFound = getForbiddenWorkKeywords(criteria).some(work => text.includes(work));
   if (forbiddenFound) {
     breakdown.etat = weightedPoints(1 / 5, weights.etat);
     pointsFaibles.push('Travaux interdits mentionnés');
@@ -639,6 +747,28 @@ export const useSmartAlerts = () => {
         .sort((a, b) => b.score - a.score)
         .slice(0, 80);
 
+      if ('id' in alert && alert.id) {
+        const { data: existingRows, error: existingError } = await supabase
+          .from('alertes_resultats')
+          .select('id, annonce_id, statut_commercial')
+          .eq('alerte_id', alert.id);
+        if (existingError) throw existingError;
+
+        const keptAnnonceIds = new Set(scored.map(result => result.annonce.id));
+        const staleRows = (existingRows || []).filter(row =>
+          !keptAnnonceIds.has(row.annonce_id) &&
+          ['new', 'viewed'].includes(String(row.statut_commercial || 'new'))
+        );
+
+        if (staleRows.length) {
+          const { error: deleteStaleError } = await supabase
+            .from('alertes_resultats')
+            .delete()
+            .in('id', staleRows.map(row => row.id));
+          if (deleteStaleError) throw deleteStaleError;
+        }
+      }
+
       if ('id' in alert && alert.id && scored.length) {
         const rows = scored.map(result => ({
           alerte_id: alert.id,
@@ -681,6 +811,12 @@ export const useSmartAlerts = () => {
           .eq('id', alert.id);
         await fetchResults(alert.id);
         await fetchNotifications();
+      } else if ('id' in alert && alert.id) {
+        await supabase
+          .from('alertes')
+          .update({ last_matching_date: new Date().toISOString() })
+          .eq('id', alert.id);
+        await fetchResults(alert.id);
       } else {
         setResults(scored.map((result, index) => ({
           id: `preview-${result.annonce.id}-${index}`,

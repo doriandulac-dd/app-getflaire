@@ -78,6 +78,36 @@ const resolveScoreWeights = (options: Record<string, unknown>) => ({
 const weightedPoints = (ratio: number, maxPoints: number) =>
   Math.max(0, Math.min(maxPoints, Math.round(ratio * maxPoints)));
 
+const heavyWorksKeywords = [
+  'ruine',
+  'a renover',
+  'renovation complete',
+  'gros travaux',
+  'travaux a prevoir',
+  'entierement a renover',
+  'maison a restaurer',
+  'a restaurer',
+  'non habitable',
+  'inhabitable',
+  'chantier',
+  'plateau brut',
+  'grange a renover',
+  'hors d eau',
+  'hors d air',
+];
+
+const stringifySourceData = (sourceData: unknown) => {
+  if (!sourceData || typeof sourceData !== 'object') return '';
+  try {
+    return JSON.stringify(sourceData);
+  } catch {
+    return '';
+  }
+};
+
+const hasCityMatch = (city: string, target: string) =>
+  Boolean(target && (city === target || city.includes(target)));
+
 const keywordWeight = (importance: string) => {
   if (importance === 'required') return 1;
   if (importance === 'high') return 0.85;
@@ -91,11 +121,65 @@ const optionList = (options: Record<string, unknown>, key: string) =>
 const normalizedOptionList = (options: Record<string, unknown>, key: string) =>
   optionList(options, key).map(item => normalize(String(item))).filter(Boolean);
 
+const getForbiddenWorkKeywords = (options: Record<string, unknown>) => {
+  const configured = Array.isArray(options.forbiddenWorks) ? options.forbiddenWorks.map(item => String(item)) : [];
+  const condition = String(options.condition || 'any');
+  if (condition !== 'any' || configured.length) {
+    return Array.from(new Set([...configured, ...heavyWorksKeywords].map(normalize).filter(Boolean)));
+  }
+  return configured.map(normalize).filter(Boolean);
+};
+
+function getHardRejectionReasons(alert: AlertRow, annonce: AnnonceRow, options: Record<string, unknown>, text: string) {
+  const reasons: string[] = [];
+  const city = normalize(annonce.city);
+  const postalCode = normalize(annonce.postal_code);
+  const targetCity = normalize(alert.ville);
+  const postalCodes = (alert.postal_codes || []).map(normalize).filter(Boolean);
+  const acceptedCities = normalizedOptionList(options, 'acceptedCities');
+  const excludedCities = normalizedOptionList(options, 'excludedCities');
+  const locationImportance = String(options.locationImportance || 'high');
+  const searchMode = String(options.searchMode || 'balanced');
+  const hasConfiguredLocation = Boolean(targetCity || postalCodes.length || acceptedCities.length);
+  const hasExplicitExtendedArea = Number(alert.radius_km || 0) > 0 || acceptedCities.length > 0;
+  const requiresExactLocation = Boolean(
+    targetCity &&
+    !hasExplicitExtendedArea &&
+    (locationImportance === 'required' || searchMode !== 'opportunity')
+  );
+
+  if (excludedCities.some(excluded => hasCityMatch(city, excluded))) {
+    reasons.push('Commune exclue');
+  }
+
+  if (postalCodes.length && postalCode && !postalCodes.some(code => postalCode.startsWith(code))) {
+    reasons.push('Code postal hors zone demandée');
+  }
+
+  if (requiresExactLocation && !hasCityMatch(city, targetCity)) {
+    reasons.push('Hors ville demandée');
+  }
+
+  if (!requiresExactLocation && hasConfiguredLocation && locationImportance === 'required') {
+    const acceptedByLocation =
+      (targetCity && hasCityMatch(city, targetCity)) ||
+      acceptedCities.some(accepted => hasCityMatch(city, accepted)) ||
+      (postalCodes.length && postalCodes.some(code => postalCode.startsWith(code)));
+    if (!acceptedByLocation) reasons.push('Hors zone obligatoire');
+  }
+
+  if (getForbiddenWorkKeywords(options).some(keyword => text.includes(keyword))) {
+    reasons.push('Travaux interdits mentionnés');
+  }
+
+  return reasons;
+}
+
 function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
   const options = alert.options_avancees || {};
   const weights = resolveScoreWeights(options);
   const totalWeight = Math.max(1, Object.values(weights).reduce((sum, value) => sum + Number(value || 0), 0));
-  const text = normalize(`${annonce.title || ''} ${annonce.description || ''} ${annonce.city || ''} ${annonce.postal_code || ''} ${annonce.type_de_bien || ''} ${annonce.owner_type || ''} ${annonce.dpe || ''}`);
+  const text = normalize(`${annonce.title || ''} ${annonce.description || ''} ${annonce.city || ''} ${annonce.postal_code || ''} ${annonce.type_de_bien || ''} ${annonce.owner_type || ''} ${annonce.dpe || ''} ${stringifySourceData(annonce.source_data)}`);
   const points_forts: string[] = [];
   const points_faibles: string[] = [];
   const score_breakdown = {
@@ -116,6 +200,17 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
   const acceptedCities = normalizedOptionList(options, 'acceptedCities');
   const excludedCities = normalizedOptionList(options, 'excludedCities');
   const locationImportance = String(options.locationImportance || 'high');
+  const rejectionReasons = getHardRejectionReasons(alert, annonce, options, text);
+
+  if (rejectionReasons.length) {
+    return {
+      score_pertinence: 0,
+      score_breakdown,
+      points_forts,
+      points_faibles: rejectionReasons.slice(0, 5),
+      resume: `Annonce écartée automatiquement: ${rejectionReasons.join(', ')}.`,
+    };
+  }
 
   if (excludedCities.some(excluded => city.includes(excluded))) {
     points_faibles.push('Commune exclue dans la recherche');
@@ -192,8 +287,7 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
   }
   if (parkingMatches.length) points_forts.push('Stationnement ou annexe détecté');
 
-  const forbiddenWorks = Array.isArray(options.forbiddenWorks) ? options.forbiddenWorks : [];
-  const forbiddenFound = forbiddenWorks.some(work => text.includes(normalize(String(work))));
+  const forbiddenFound = getForbiddenWorkKeywords(options).some(work => text.includes(work));
   score_breakdown.etat = forbiddenFound ? weightedPoints(1 / 5, weights.etat) : weights.etat;
   if (forbiddenFound) points_faibles.push('Travaux interdits mentionnés');
 
@@ -288,13 +382,29 @@ async function runAlertMatching(alert: AlertRow, annonceId?: string) {
     .filter(result => result.score_pertinence >= alert.matching_threshold)
     .sort((a, b) => b.score_pertinence - a.score_pertinence);
 
-  if (scored.length) {
-    const { data: existingRows, error: existingError } = await supabase
-      .from('alertes_resultats')
-      .select('id, annonce_id')
-      .eq('alerte_id', alert.id);
-    if (existingError) throw existingError;
+  const { data: existingRows, error: existingError } = await supabase
+    .from('alertes_resultats')
+    .select('id, annonce_id, statut_commercial')
+    .eq('alerte_id', alert.id);
+  if (existingError) throw existingError;
 
+  if (!annonceId) {
+    const keptAnnonceIds = new Set(scored.map(result => result.annonce.id));
+    const staleRows = (existingRows || []).filter(row =>
+      !keptAnnonceIds.has(row.annonce_id) &&
+      ['new', 'viewed'].includes(String(row.statut_commercial || 'new'))
+    );
+
+    if (staleRows.length) {
+      const { error: deleteStaleError } = await supabase
+        .from('alertes_resultats')
+        .delete()
+        .in('id', staleRows.map(row => row.id));
+      if (deleteStaleError) throw deleteStaleError;
+    }
+  }
+
+  if (scored.length) {
     const existingIds = new Set((existingRows || []).map(row => row.annonce_id));
     const newResults = scored.filter(result => !existingIds.has(result.annonce.id));
     const existingResults = scored.filter(result => existingIds.has(result.annonce.id));
