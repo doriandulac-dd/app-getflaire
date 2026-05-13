@@ -15,8 +15,12 @@ const corsHeaders = {
 type AlertRow = {
   id: string;
   user_id: string;
+  statut?: string | null;
+  is_active?: boolean | null;
   nom_alerte: string;
   ville?: string | null;
+  postal_codes?: string[] | null;
+  radius_km?: number | null;
   type_de_bien?: string | null;
   prix_min?: number | null;
   prix_max?: number | null;
@@ -38,9 +42,12 @@ type AnnonceRow = {
   bedrooms?: number | null;
   type_de_bien?: string | null;
   city?: string | null;
+  postal_code?: string | null;
+  owner_type?: string | null;
   dpe?: string | null;
   en_ligne?: boolean | null;
   supprimee?: boolean | null;
+  source_data?: Record<string, unknown> | null;
 };
 
 const defaultScoreWeights = {
@@ -71,11 +78,24 @@ const resolveScoreWeights = (options: Record<string, unknown>) => ({
 const weightedPoints = (ratio: number, maxPoints: number) =>
   Math.max(0, Math.min(maxPoints, Math.round(ratio * maxPoints)));
 
+const keywordWeight = (importance: string) => {
+  if (importance === 'required') return 1;
+  if (importance === 'high') return 0.85;
+  if (importance === 'medium') return 0.6;
+  return 0.35;
+};
+
+const optionList = (options: Record<string, unknown>, key: string) =>
+  Array.isArray(options[key]) ? options[key] as unknown[] : [];
+
+const normalizedOptionList = (options: Record<string, unknown>, key: string) =>
+  optionList(options, key).map(item => normalize(String(item))).filter(Boolean);
+
 function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
   const options = alert.options_avancees || {};
   const weights = resolveScoreWeights(options);
   const totalWeight = Math.max(1, Object.values(weights).reduce((sum, value) => sum + Number(value || 0), 0));
-  const text = normalize(`${annonce.title || ''} ${annonce.description || ''} ${annonce.city || ''} ${annonce.type_de_bien || ''} ${annonce.dpe || ''}`);
+  const text = normalize(`${annonce.title || ''} ${annonce.description || ''} ${annonce.city || ''} ${annonce.postal_code || ''} ${annonce.type_de_bien || ''} ${annonce.owner_type || ''} ${annonce.dpe || ''}`);
   const points_forts: string[] = [];
   const points_faibles: string[] = [];
   const score_breakdown = {
@@ -90,13 +110,28 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
   };
 
   const city = normalize(annonce.city);
+  const postalCode = normalize(annonce.postal_code);
   const targetCity = normalize(alert.ville);
-  if (!targetCity) score_breakdown.localisation = weightedPoints(18 / 25, weights.localisation);
+  const postalCodes = (alert.postal_codes || []).map(normalize).filter(Boolean);
+  const acceptedCities = normalizedOptionList(options, 'acceptedCities');
+  const excludedCities = normalizedOptionList(options, 'excludedCities');
+  const locationImportance = String(options.locationImportance || 'high');
+
+  if (excludedCities.some(excluded => city.includes(excluded))) {
+    points_faibles.push('Commune exclue dans la recherche');
+  } else if (postalCodes.length && postalCodes.some(code => postalCode.startsWith(code))) {
+    score_breakdown.localisation = weights.localisation;
+    points_forts.push('Code postal correspondant');
+  } else if (!targetCity && acceptedCities.length === 0) score_breakdown.localisation = weightedPoints(18 / 25, weights.localisation);
   else if (city.includes(targetCity)) {
     score_breakdown.localisation = weights.localisation;
     points_forts.push('Ville principale correspondante');
+  } else if (acceptedCities.some(accepted => city.includes(accepted))) {
+    score_breakdown.localisation = weightedPoints(22 / 25, weights.localisation);
+    points_forts.push('Commune acceptée');
   } else {
-    score_breakdown.localisation = weightedPoints(10 / 25, weights.localisation);
+    const ratio = Number(alert.radius_km || 0) > 0 && locationImportance !== 'required' ? 12 : 10;
+    score_breakdown.localisation = weightedPoints((locationImportance === 'required' ? 2 : ratio) / 25, weights.localisation);
     points_faibles.push('Localisation à vérifier');
   }
 
@@ -112,12 +147,26 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
     points_faibles.push('Budget hors cible');
   }
 
-  if (!alert.type_de_bien) score_breakdown.type = weightedPoints(10 / 15, weights.type);
-  else if (normalize(annonce.type_de_bien).includes(normalize(alert.type_de_bien))) {
+  const propertyTypes = [...normalizedOptionList(options, 'propertyTypes'), normalize(alert.type_de_bien)].filter(Boolean);
+  if (propertyTypes.length === 0) score_breakdown.type = weightedPoints(10 / 15, weights.type);
+  else if (propertyTypes.some(type => normalize(annonce.type_de_bien).includes(type))) {
     score_breakdown.type = weights.type;
     points_forts.push('Type de bien exact');
+  } else if (normalizedOptionList(options, 'secondaryTypes').some(type => normalize(annonce.type_de_bien).includes(type))) {
+    score_breakdown.type = weightedPoints(9 / 15, weights.type);
+    points_forts.push('Type de bien accepté secondairement');
   } else {
     points_faibles.push('Type de bien différent');
+  }
+
+  const sellerType = normalize(annonce.owner_type || String(annonce.source_data?.owner_type || ''));
+  if (options.sellerType === 'particulier' && sellerType && !sellerType.includes('particulier')) {
+    points_faibles.push('Vendeur professionnel détecté');
+    score_breakdown.type = Math.min(score_breakdown.type, weightedPoints(7 / 15, weights.type));
+  }
+  if (options.sellerType === 'pro' && sellerType && !sellerType.includes('pro')) {
+    points_faibles.push('Vendeur particulier détecté');
+    score_breakdown.type = Math.min(score_breakdown.type, weightedPoints(7 / 15, weights.type));
   }
 
   const checks = [
@@ -131,12 +180,17 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
   else points_faibles.push('Surface ou pièces en écart');
 
   const hasExterior = ['jardin', 'terrain', 'terrasse', 'balcon', 'cour', 'piscine'].some(keyword => text.includes(keyword));
+  const parking = options.parking && typeof options.parking === 'object' ? options.parking as Record<string, unknown> : {};
+  const parkingMatches = Object.entries(parking)
+    .filter(([, importance]) => importance !== 'any')
+    .filter(([key]) => text.includes(normalize(key)));
   if (options.exterior === 'required' && !hasExterior) {
     points_faibles.push('Extérieur obligatoire non détecté');
   } else {
-    score_breakdown.exterieur = hasExterior ? weights.exterieur : weightedPoints(6 / 10, weights.exterieur);
+    score_breakdown.exterieur = hasExterior ? weights.exterieur : weightedPoints((parkingMatches.length ? 8 : 6) / 10, weights.exterieur);
     if (hasExterior) points_forts.push('Extérieur détecté');
   }
+  if (parkingMatches.length) points_forts.push('Stationnement ou annexe détecté');
 
   const forbiddenWorks = Array.isArray(options.forbiddenWorks) ? options.forbiddenWorks : [];
   const forbiddenFound = forbiddenWorks.some(work => text.includes(normalize(String(work))));
@@ -152,15 +206,46 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
   }
 
   const positiveKeywords = Array.isArray(options.positiveKeywords) ? options.positiveKeywords : [];
+  const negativeKeywords = Array.isArray(options.negativeKeywords) ? options.negativeKeywords : [];
   let keywordScore = 2;
   positiveKeywords.forEach((keyword: any) => {
     const value = normalize(keyword?.value);
     if (value && text.includes(value)) {
-      keywordScore += 1;
+      keywordScore += 3 * keywordWeight(String(keyword?.importance || 'medium'));
       points_forts.push(`Mot-clé détecté: ${keyword.value}`);
+    } else if (keyword?.importance === 'required') {
+      points_faibles.push(`Mot-clé obligatoire absent: ${keyword.value}`);
     }
   });
-  score_breakdown.motsCles = weightedPoints(Math.min(5, keywordScore) / 5, weights.motsCles);
+  negativeKeywords.forEach((keyword: any) => {
+    const value = normalize(keyword?.value);
+    if (value && text.includes(value)) {
+      keywordScore -= 4 * keywordWeight(String(keyword?.importance || 'medium'));
+      points_faibles.push(`Mot-clé exclu détecté: ${keyword.value}`);
+    }
+  });
+
+  const investor = options.investor && typeof options.investor === 'object' ? options.investor as Record<string, unknown> : null;
+  if (investor?.enabled) {
+    const maxPricePerSqm = Number(investor.maxPricePerSqm || 0);
+    const pricePerSqm = annonce.price && annonce.size ? Number(annonce.price) / Number(annonce.size) : null;
+    if (maxPricePerSqm && pricePerSqm && pricePerSqm <= maxPricePerSqm) {
+      keywordScore += 1;
+      points_forts.push('Prix au m² compatible investisseur');
+    } else if (maxPricePerSqm && pricePerSqm) {
+      keywordScore -= 1;
+      points_faibles.push('Prix au m² au-dessus de la cible');
+    }
+    if (Array.isArray(investor.potential)) {
+      investor.potential.forEach((signal) => {
+        if (text.includes(normalize(String(signal)))) {
+          keywordScore += 1;
+          points_forts.push(`Potentiel investisseur: ${signal}`);
+        }
+      });
+    }
+  }
+  score_breakdown.motsCles = weightedPoints(Math.max(0, Math.min(5, keywordScore)) / 5, weights.motsCles);
 
   const rawScore = Object.values(score_breakdown).reduce((sum, value) => sum + value, 0);
   const score_pertinence = Math.max(0, Math.min(100, Math.round((rawScore / totalWeight) * 100)));
@@ -182,6 +267,9 @@ function scoreAnnonce(alert: AlertRow, annonce: AnnonceRow) {
 }
 
 async function runAlertMatching(alert: AlertRow, annonceId?: string) {
+  if (alert.statut && alert.statut !== 'active') return 0;
+  if (alert.is_active === false) return 0;
+
   let query = supabase
     .from('annonces')
     .select('*')
@@ -201,37 +289,68 @@ async function runAlertMatching(alert: AlertRow, annonceId?: string) {
     .sort((a, b) => b.score_pertinence - a.score_pertinence);
 
   if (scored.length) {
-    const { error: upsertError } = await supabase
+    const { data: existingRows, error: existingError } = await supabase
       .from('alertes_resultats')
-      .upsert(scored.map(result => ({
-        alerte_id: alert.id,
-        annonce_id: result.annonce.id,
-        score_pertinence: result.score_pertinence,
-        score_breakdown: result.score_breakdown,
-        points_forts: result.points_forts,
-        points_faibles: result.points_faibles,
-        resume: result.resume,
-        statut_commercial: 'new',
-        date_matching: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })), { onConflict: 'alerte_id,annonce_id' });
-    if (upsertError) throw upsertError;
+      .select('id, annonce_id')
+      .eq('alerte_id', alert.id);
+    if (existingError) throw existingError;
 
-    const best = scored[0];
-    await supabase.from('alertes_notifications').insert({
-      alerte_id: alert.id,
-      user_id: alert.user_id,
-      type_notification: 'in_app',
-      contenu: {
-        title: 'Nouveau match alerte intelligente',
-        message: `${scored.length} annonce(s) dépassent le seuil de ${alert.matching_threshold} %.`,
-        score: best.score_pertinence,
-        annonce_id: best.annonce.id,
+    const existingIds = new Set((existingRows || []).map(row => row.annonce_id));
+    const newResults = scored.filter(result => !existingIds.has(result.annonce.id));
+    const existingResults = scored.filter(result => existingIds.has(result.annonce.id));
+
+    if (newResults.length) {
+      const { error: insertError } = await supabase
+        .from('alertes_resultats')
+        .insert(newResults.map(result => ({
+          alerte_id: alert.id,
+          annonce_id: result.annonce.id,
+          score_pertinence: result.score_pertinence,
+          score_breakdown: result.score_breakdown,
+          points_forts: result.points_forts,
+          points_faibles: result.points_faibles,
+          resume: result.resume,
+          statut_commercial: 'new',
+          date_matching: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })));
+      if (insertError) throw insertError;
+    }
+
+    for (const result of existingResults) {
+      const { error: updateError } = await supabase
+        .from('alertes_resultats')
+        .update({
+          score_pertinence: result.score_pertinence,
+          score_breakdown: result.score_breakdown,
+          points_forts: result.points_forts,
+          points_faibles: result.points_faibles,
+          resume: result.resume,
+          date_matching: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('alerte_id', alert.id)
+        .eq('annonce_id', result.annonce.id);
+      if (updateError) throw updateError;
+    }
+
+    if (newResults.length) {
+      const best = newResults[0];
+      await supabase.from('alertes_notifications').insert({
         alerte_id: alert.id,
-      },
-      envoye: true,
-      date_envoi: new Date().toISOString(),
-    });
+        user_id: alert.user_id,
+        type_notification: 'in_app',
+        contenu: {
+          title: 'Nouveau match alerte intelligente',
+          message: `${newResults.length} nouvelle(s) annonce(s) dépassent le seuil de ${alert.matching_threshold} %.`,
+          score: best.score_pertinence,
+          annonce_id: best.annonce.id,
+          alerte_id: alert.id,
+        },
+        envoye: true,
+        date_envoi: new Date().toISOString(),
+      });
+    }
   }
 
   await supabase.from('alertes').update({ last_matching_date: new Date().toISOString() }).eq('id', alert.id);
@@ -244,7 +363,7 @@ Deno.serve(async (req) => {
     if (req.method !== 'POST') return json({ error: 'Method not allowed' }, 405);
 
     const body = await req.json().catch(() => ({}));
-    const { alerte_id, process_jobs = false, limit = 25 } = body;
+    const { alerte_id, process_jobs = false, process_due = false, limit = 25 } = body;
 
     if (alerte_id) {
       const { data: alert, error } = await supabase.from('alertes').select('*').eq('id', alerte_id).single();
@@ -280,7 +399,34 @@ Deno.serve(async (req) => {
       return json({ jobs: jobs?.length || 0, processed });
     }
 
-    return json({ error: 'Missing alerte_id or process_jobs=true' }, 400);
+    if (process_due) {
+      const { data: alerts, error: alertsError } = await supabase
+        .from('alertes')
+        .select('*')
+        .eq('is_active', true)
+        .eq('statut', 'active')
+        .in('frequence_analyse', ['hourly', 'twice_daily', 'daily'])
+        .limit(limit);
+      if (alertsError) throw alertsError;
+
+      const now = Date.now();
+      const dueAlerts = (alerts || []).filter((alert: AlertRow & { frequence_analyse?: string | null; last_matching_date?: string | null }) => {
+        const lastRun = alert.last_matching_date ? new Date(alert.last_matching_date).getTime() : 0;
+        const intervalMs =
+          alert.frequence_analyse === 'daily' ? 24 * 60 * 60 * 1000 :
+          alert.frequence_analyse === 'twice_daily' ? 12 * 60 * 60 * 1000 :
+          60 * 60 * 1000;
+        return !lastRun || now - lastRun >= intervalMs;
+      });
+
+      let processed = 0;
+      for (const alert of dueAlerts) {
+        processed += await runAlertMatching(alert);
+      }
+      return json({ alerts: dueAlerts.length, processed });
+    }
+
+    return json({ error: 'Missing alerte_id, process_jobs=true or process_due=true' }, 400);
   } catch (error) {
     console.error('smart-alert-matcher error:', error);
     return json({ error: error instanceof Error ? error.message : 'Internal error' }, 500);

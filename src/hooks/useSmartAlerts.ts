@@ -7,6 +7,8 @@ import { useActivityScope } from './useActivityScope';
 import { savePropertyFavorite } from '../utils/propertyFavorites';
 import { savePropertyAction } from '../utils/propertyActivities';
 import type { PropertyActionType } from '../utils/propertyActivities';
+import { generateOutreach } from '../utils/outreachGeneration';
+import type { OutreachMode } from '../utils/outreachGeneration';
 import {
   AlertMatchResult,
   AlertNotification,
@@ -139,13 +141,13 @@ export const parseNaturalLanguageCriteria = (text: string): Partial<SmartAlertFo
 };
 
 export const scoreAnnonceForAlert = (
-  alert: Pick<SmartAlertFormData, 'ville' | 'prix_min' | 'prix_max' | 'surface_min' | 'surface_max' | 'rooms_min' | 'bedrooms_min' | 'type_de_bien' | 'options_avancees'>,
+  alert: Pick<SmartAlertFormData, 'ville' | 'postal_codes' | 'radius_km' | 'prix_min' | 'prix_max' | 'surface_min' | 'surface_max' | 'rooms_min' | 'bedrooms_min' | 'type_de_bien' | 'options_avancees'>,
   annonce: Annonce
 ) => {
   const criteria = { ...defaultSmartAlertCriteria, ...alert.options_avancees };
   const weights = resolveScoreWeights(criteria.scoreWeights);
   const totalWeight = Math.max(1, Object.values(weights).reduce((sum, value) => sum + value, 0));
-  const text = normalizeText(`${annonce.title} ${annonce.description} ${annonce.city} ${annonce.type_de_bien} ${annonce.dpe || ''}`);
+  const text = normalizeText(`${annonce.title} ${annonce.description} ${annonce.city} ${annonce.postal_code || ''} ${annonce.type_de_bien} ${annonce.owner_type || ''} ${annonce.dpe || ''}`);
   const pointsForts: string[] = [];
   const pointsFaibles: string[] = [];
   const breakdown: ScoreBreakdown = {
@@ -160,12 +162,17 @@ export const scoreAnnonceForAlert = (
   };
 
   const city = normalizeText(annonce.city);
+  const postalCode = normalizeText(annonce.postal_code);
   const mainCity = normalizeText(alert.ville);
+  const postalCodes = (alert.postal_codes || []).map(normalizeText).filter(Boolean);
   const acceptedCities = criteria.acceptedCities.map(normalizeText).filter(Boolean);
   const excludedCities = criteria.excludedCities.map(normalizeText).filter(Boolean);
 
   if (excludedCities.some(excluded => city.includes(excluded))) {
     pointsFaibles.push('Commune exclue dans la recherche');
+  } else if (postalCodes.length && postalCodes.some(code => postalCode.startsWith(code))) {
+    breakdown.localisation = weights.localisation;
+    pointsForts.push('Code postal correspondant');
   } else if (!mainCity && acceptedCities.length === 0) {
     breakdown.localisation = weightedPoints(18 / 25, weights.localisation);
     pointsForts.push('Localisation non restrictive');
@@ -176,7 +183,8 @@ export const scoreAnnonceForAlert = (
     breakdown.localisation = weightedPoints(22 / 25, weights.localisation);
     pointsForts.push('Commune acceptée');
   } else {
-    breakdown.localisation = weightedPoints((criteria.locationImportance === 'required' ? 2 : 10) / 25, weights.localisation);
+    const ratio = alert.radius_km > 0 && criteria.locationImportance !== 'required' ? 12 : 10;
+    breakdown.localisation = weightedPoints((criteria.locationImportance === 'required' ? 2 : ratio) / 25, weights.localisation);
     pointsFaibles.push('Localisation à vérifier');
   }
 
@@ -194,9 +202,10 @@ export const scoreAnnonceForAlert = (
     pointsFaibles.push('Budget hors cible');
   }
 
-  if (!alert.type_de_bien) {
+  const propertyTypes = [...criteria.propertyTypes, alert.type_de_bien].map(normalizeText).filter(Boolean);
+  if (propertyTypes.length === 0) {
     breakdown.type = weightedPoints(10 / 15, weights.type);
-  } else if (normalizeText(annonce.type_de_bien).includes(normalizeText(alert.type_de_bien))) {
+  } else if (propertyTypes.some(type => normalizeText(annonce.type_de_bien).includes(type))) {
     breakdown.type = weights.type;
     pointsForts.push('Type de bien exact');
   } else if (criteria.secondaryTypes.some(type => normalizeText(annonce.type_de_bien).includes(normalizeText(type)))) {
@@ -204,6 +213,19 @@ export const scoreAnnonceForAlert = (
     pointsForts.push('Type de bien accepté secondairement');
   } else {
     pointsFaibles.push('Type de bien différent');
+  }
+
+  const sourceOwnerType = annonce.source_data && typeof annonce.source_data === 'object'
+    ? String((annonce.source_data as Record<string, unknown>).owner_type || '')
+    : '';
+  const sellerType = normalizeText(annonce.owner_type || sourceOwnerType);
+  if (criteria.sellerType === 'particulier' && sellerType && !sellerType.includes('particulier')) {
+    pointsFaibles.push('Vendeur professionnel détecté');
+    breakdown.type = Math.min(breakdown.type, weightedPoints(7 / 15, weights.type));
+  }
+  if (criteria.sellerType === 'pro' && sellerType && !sellerType.includes('pro')) {
+    pointsFaibles.push('Vendeur particulier détecté');
+    breakdown.type = Math.min(breakdown.type, weightedPoints(7 / 15, weights.type));
   }
 
   const surfaceOk = alert.surface_min === undefined || annonce.size >= alert.surface_min;
@@ -215,8 +237,10 @@ export const scoreAnnonceForAlert = (
   else pointsFaibles.push('Surface ou pièces en écart');
 
   const hasExterior = ['jardin', 'terrain', 'terrasse', 'balcon', 'cour', 'piscine'].some(k => text.includes(k));
+  const expectedParking = Object.entries(criteria.parking || {}).filter(([, importance]) => importance !== 'any');
+  const parkingMatches = expectedParking.filter(([key]) => text.includes(normalizeText(key)));
   if (criteria.exterior === 'any') {
-    breakdown.exterieur = weightedPoints(6 / 10, weights.exterieur);
+    breakdown.exterieur = weightedPoints((parkingMatches.length ? 8 : 6) / 10, weights.exterieur);
   } else if (hasExterior && criteria.exterior !== 'not_wanted') {
     breakdown.exterieur = weights.exterieur;
     pointsForts.push('Extérieur détecté');
@@ -225,6 +249,7 @@ export const scoreAnnonceForAlert = (
   } else {
     breakdown.exterieur = weightedPoints(4 / 10, weights.exterieur);
   }
+  if (parkingMatches.length) pointsForts.push('Stationnement ou annexe détecté');
 
   const forbiddenFound = criteria.forbiddenWorks.some(work => text.includes(normalizeText(work)));
   if (forbiddenFound) {
@@ -257,6 +282,23 @@ export const scoreAnnonceForAlert = (
       pointsFaibles.push(`Mot-clé exclu détecté: ${keyword.value}`);
     }
   });
+
+  if (criteria.investor?.enabled) {
+    const pricePerSqm = annonce.price && annonce.size ? annonce.price / annonce.size : null;
+    if (criteria.investor.maxPricePerSqm && pricePerSqm && pricePerSqm <= criteria.investor.maxPricePerSqm) {
+      keywordScore += 1;
+      pointsForts.push('Prix au m² compatible investisseur');
+    } else if (criteria.investor.maxPricePerSqm && pricePerSqm) {
+      keywordScore -= 1;
+      pointsFaibles.push('Prix au m² au-dessus de la cible');
+    }
+    criteria.investor.potential.forEach(signal => {
+      if (text.includes(normalizeText(signal))) {
+        keywordScore += 1;
+        pointsForts.push(`Potentiel investisseur: ${signal}`);
+      }
+    });
+  }
   breakdown.motsCles = weightedPoints(Math.max(0, Math.min(5, keywordScore)) / 5, weights.motsCles);
 
   const rawScore = Object.values(breakdown).reduce((sum, value) => sum + value, 0);
@@ -288,6 +330,51 @@ const mapAlertRow = (row: any): SmartAlert => ({
   client: row.client || null,
 });
 
+const validateAlertForm = (form: SmartAlertFormData) => {
+  if (!form.nom_alerte.trim()) return 'Le nom de la recherche est obligatoire';
+  if (form.matching_threshold < 0 || form.matching_threshold > 100) return 'Le seuil doit être compris entre 0 et 100';
+  if (form.radius_km < 0) return 'Le rayon doit être positif';
+  if (form.prix_min !== undefined && form.prix_max !== undefined && form.prix_min > form.prix_max) return 'Le budget minimum doit rester inférieur au budget maximum';
+  if (form.surface_min !== undefined && form.surface_max !== undefined && form.surface_min > form.surface_max) return 'La surface minimum doit rester inférieure à la surface maximum';
+  return null;
+};
+
+const smartAlertErrorMessage = (error: { message?: string; code?: string }) => {
+  const message = error.message || '';
+  if (error.code === '42P01' || message.includes('public.alertes') || message.includes('public.alertes_resultats')) {
+    return "Les tables Supabase des alertes intelligentes ne sont pas encore installées. Lance les migrations Supabase avant d'enregistrer une recherche.";
+  }
+  if (message.includes('public.clients')) {
+    return "La table clients n'est pas encore installée dans Supabase. Les alertes restent utilisables sans client associé après migration du module.";
+  }
+  return message || 'Erreur Supabase inconnue';
+};
+
+const alertFormPayload = (form: SmartAlertFormData, appUser: { id: string; agency_id?: string }) => ({
+  user_id: appUser.id,
+  agency_id: appUser.agency_id || null,
+  client_id: form.client_id || null,
+  nom_alerte: form.nom_alerte.trim(),
+  type_recherche: form.type_recherche,
+  statut: form.statut,
+  priorite: form.priorite,
+  ville: form.ville || null,
+  postal_codes: form.postal_codes,
+  radius_km: form.radius_km,
+  type_de_bien: form.type_de_bien || null,
+  prix_min: form.prix_min ?? null,
+  prix_max: form.prix_max ?? null,
+  surface_min: form.surface_min ?? null,
+  surface_max: form.surface_max ?? null,
+  rooms_min: form.rooms_min ?? null,
+  bedrooms_min: form.bedrooms_min ?? null,
+  matching_threshold: Math.max(0, Math.min(100, form.matching_threshold)),
+  frequence_analyse: form.frequence_analyse,
+  options_avancees: form.options_avancees,
+  is_active: form.statut === 'active',
+  updated_at: new Date().toISOString(),
+});
+
 export const useSmartAlerts = () => {
   const { appUser } = useAuth();
   const activityScope = useActivityScope();
@@ -312,7 +399,13 @@ export const useSmartAlerts = () => {
       .select('*')
       .order('created_at', { ascending: false });
     const { data, error: queryError } = await query;
-    if (queryError) throw queryError;
+    if (queryError) {
+      if (queryError.code === '42P01' || queryError.message.includes('does not exist')) {
+        setClients([]);
+        return;
+      }
+      throw queryError;
+    }
     setClients(data || []);
   }, [appUser]);
 
@@ -320,8 +413,9 @@ export const useSmartAlerts = () => {
     if (!appUser) return;
     const { data, error: queryError } = await supabase
       .from('alertes')
-      .select('*, client:clients(*)')
+      .select('*')
       .order('created_at', { ascending: false });
+
     if (queryError) throw queryError;
     const mapped = (data || []).map(mapAlertRow);
     setAlerts(mapped);
@@ -369,7 +463,7 @@ export const useSmartAlerts = () => {
     try {
       await Promise.all([fetchClients(), fetchAlerts(), fetchNotifications()]);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les alertes intelligentes');
+      setError(smartAlertErrorMessage(err) || 'Impossible de charger les alertes intelligentes');
     } finally {
       setLoading(false);
     }
@@ -401,44 +495,83 @@ export const useSmartAlerts = () => {
     return data as Client;
   };
 
-  const saveAlert = async (form: SmartAlertFormData) => {
+  const saveAlert = async (form: SmartAlertFormData, alertId?: string) => {
     if (!appUser) throw new Error('Utilisateur introuvable');
-    const payload = {
-      user_id: appUser.id,
-      agency_id: appUser.agency_id || null,
-      client_id: form.client_id || null,
-      nom_alerte: form.nom_alerte,
-      type_recherche: form.type_recherche,
-      statut: form.statut,
-      priorite: form.priorite,
-      ville: form.ville || null,
-      postal_codes: form.postal_codes,
-      radius_km: form.radius_km,
-      type_de_bien: form.type_de_bien || null,
-      prix_min: form.prix_min ?? null,
-      prix_max: form.prix_max ?? null,
-      surface_min: form.surface_min ?? null,
-      surface_max: form.surface_max ?? null,
-      rooms_min: form.rooms_min ?? null,
-      bedrooms_min: form.bedrooms_min ?? null,
-      matching_threshold: form.matching_threshold,
-      frequence_analyse: form.frequence_analyse,
-      options_avancees: form.options_avancees,
-      is_active: form.statut === 'active',
-      updated_at: new Date().toISOString(),
-    };
+    const validationError = validateAlertForm(form);
+    if (validationError) throw new Error(validationError);
+    const payload = alertFormPayload(form, appUser);
 
+    const query = alertId
+      ? supabase.from('alertes').update(payload).eq('id', alertId)
+      : supabase.from('alertes').insert(payload);
+
+    const { data, error: queryError } = await query
+      .select('*')
+      .single();
+    if (queryError) throw new Error(smartAlertErrorMessage(queryError));
+    const alert = mapAlertRow(data);
+    setAlerts(prev => alertId
+      ? prev.map(item => item.id === alert.id ? alert : item)
+      : [alert, ...prev]
+    );
+    setSelectedAlertId(alert.id);
+    toast.success(alertId ? 'Recherche mise à jour' : 'Recherche sauvegardée');
+    return alert;
+  };
+
+  const updateAlertStatus = async (alertId: string, statut: SmartAlert['statut']) => {
     const { data, error: queryError } = await supabase
       .from('alertes')
-      .insert(payload)
-      .select('*, client:clients(*)')
+      .update({
+        statut,
+        is_active: statut === 'active',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', alertId)
+      .select('*')
       .single();
     if (queryError) throw queryError;
     const alert = mapAlertRow(data);
-    setAlerts(prev => [alert, ...prev]);
-    setSelectedAlertId(alert.id);
-    toast.success('Recherche sauvegardée');
+    setAlerts(prev => prev.map(item => item.id === alert.id ? alert : item));
+    toast.success(statut === 'active' ? 'Recherche réactivée' : statut === 'paused' ? 'Recherche mise en pause' : 'Recherche archivée');
     return alert;
+  };
+
+  const deleteAlert = async (alertId: string) => {
+    const { error: queryError } = await supabase
+      .from('alertes')
+      .delete()
+      .eq('id', alertId);
+    if (queryError) throw queryError;
+    setAlerts(prev => prev.filter(alert => alert.id !== alertId));
+    setResults(prev => prev.filter(result => result.alerte_id !== alertId));
+    setSelectedAlertId(prev => prev === alertId ? null : prev);
+    toast.success('Recherche supprimée');
+  };
+
+  const duplicateAlert = async (alert: SmartAlert) => {
+    const duplicated = await saveAlert({
+      nom_alerte: `${alert.nom_alerte} - copie`,
+      type_recherche: alert.type_recherche,
+      client_id: alert.client_id || undefined,
+      statut: 'paused',
+      priorite: alert.priorite,
+      ville: alert.ville || '',
+      postal_codes: alert.postal_codes || [],
+      radius_km: alert.radius_km,
+      type_de_bien: alert.type_de_bien || '',
+      prix_min: alert.prix_min ?? undefined,
+      prix_max: alert.prix_max ?? undefined,
+      surface_min: alert.surface_min ?? undefined,
+      surface_max: alert.surface_max ?? undefined,
+      rooms_min: alert.rooms_min ?? undefined,
+      bedrooms_min: alert.bedrooms_min ?? undefined,
+      matching_threshold: alert.matching_threshold,
+      frequence_analyse: alert.frequence_analyse,
+      options_avancees: alert.options_avancees,
+    });
+    toast.success('Copie créée en pause');
+    return duplicated;
   };
 
   const runMatching = async (alert: SmartAlert | SmartAlertFormData) => {
@@ -455,6 +588,28 @@ export const useSmartAlerts = () => {
         created_at: new Date().toISOString(),
       } as SmartAlert;
 
+      if ('id' in alert && alert.id && alert.statut !== 'active') {
+        toast.error('Seules les recherches actives peuvent lancer une analyse');
+        return 0;
+      }
+
+      if ('id' in alert && alert.id) {
+        const { data, error: invokeError } = await supabase.functions.invoke('smart-alert-matcher', {
+          body: { alerte_id: alert.id },
+        });
+
+        if (!invokeError) {
+          await fetchResults(alert.id);
+          await fetchNotifications();
+          await fetchAlerts();
+          const matched = Number((data as any)?.matched || 0);
+          toast.success(`${matched} annonce(s) matchée(s)`);
+          return matched;
+        }
+
+        console.warn('[smart-alert-matcher] fallback local matching', invokeError);
+      }
+
       const { data: annoncesData, error: annoncesError } = await supabase
         .from('annonces_with_relative_date')
         .select('*')
@@ -467,6 +622,8 @@ export const useSmartAlerts = () => {
         .map((annonce: Annonce) => {
           const score = scoreAnnonceForAlert({
             ville: criteriaAlert.ville || '',
+            postal_codes: criteriaAlert.postal_codes || [],
+            radius_km: criteriaAlert.radius_km || 0,
             prix_min: criteriaAlert.prix_min ?? undefined,
             prix_max: criteriaAlert.prix_max ?? undefined,
             surface_min: criteriaAlert.surface_min ?? undefined,
@@ -605,6 +762,55 @@ export const useSmartAlerts = () => {
     setNotifications(prev => prev.map(notification => notification.id === notificationId ? { ...notification, read_at: new Date().toISOString() } : notification));
   };
 
+  const toggleNotificationRead = async (notificationId: string, read: boolean) => {
+    const readAt = read ? new Date().toISOString() : null;
+    const { error: queryError } = await supabase
+      .from('alertes_notifications')
+      .update({ read_at: readAt })
+      .eq('id', notificationId);
+    if (queryError) throw queryError;
+    setNotifications(prev => prev.map(notification => notification.id === notificationId ? { ...notification, read_at: readAt } : notification));
+  };
+
+  const prepareOutreachMessage = async (result: AlertMatchResult, mode: OutreachMode | 'email') => {
+    if (!result.annonce) throw new Error('Annonce introuvable');
+    const alert = alerts.find(item => item.id === result.alerte_id) || selectedAlert;
+    const clientName = alert?.client ? `${alert.client.first_name} ${alert.client.last_name}` : 'votre client';
+    const highlights = result.points_forts.slice(0, 3).join(', ');
+
+    if (mode === 'email') {
+      return [
+        `Bonjour ${clientName},`,
+        '',
+        `J'ai repéré cette annonce qui correspond bien à votre recherche: ${result.annonce.title}.`,
+        `Score GetFlaire: ${result.score_pertinence}/100.`,
+        highlights ? `Points forts: ${highlights}.` : '',
+        `Lien: ${result.annonce.url}`,
+        '',
+        'Souhaitez-vous que je la qualifie pour vous rapidement ?',
+      ].filter(Boolean).join('\n');
+    }
+
+    const generated = await generateOutreach({
+      annonce: result.annonce,
+      mode,
+      commercialProfile: appUser?.personalization_settings?.commercial_profile,
+      userProfile: {
+        firstName: appUser?.Prenom,
+        lastName: appUser?.nom,
+        phone: appUser?.telephone,
+        email: appUser?.email,
+        agencyName: appUser?.agency?.name,
+      },
+    });
+
+    const suggestion = mode === 'sms'
+      ? generated.smsSuggestions[0]
+      : generated.callScripts[0];
+
+    return suggestion?.body || `Annonce compatible (${result.score_pertinence}/100): ${result.annonce.title} - ${result.annonce.url}`;
+  };
+
   return {
     clients,
     alerts,
@@ -618,6 +824,9 @@ export const useSmartAlerts = () => {
     error,
     createClient,
     saveAlert,
+    updateAlertStatus,
+    deleteAlert,
+    duplicateAlert,
     runMatching,
     refresh,
     fetchResults,
@@ -625,6 +834,8 @@ export const useSmartAlerts = () => {
     addFavorite,
     addToFollowUp,
     markNotificationRead,
+    toggleNotificationRead,
+    prepareOutreachMessage,
     toNumber,
   };
 };

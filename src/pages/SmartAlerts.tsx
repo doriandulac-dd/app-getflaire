@@ -1,23 +1,33 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Archive,
+  ArrowUpDown,
   Bell,
   Bot,
   CalendarClock,
   CheckCircle2,
+  Copy,
+  Edit3,
   ExternalLink,
   Eye,
+  FileText,
   Heart,
+  Home,
   Mail,
   MapPin,
   MessageCircle,
+  Pause,
+  Play,
   Plus,
   Radar,
+  RotateCcw,
   Search,
   Send,
   SlidersHorizontal,
   Sparkles,
   Star,
   Target,
+  Trash2,
   UserPlus,
   XCircle,
 } from 'lucide-react';
@@ -37,7 +47,7 @@ import {
   thresholdForMode,
   useSmartAlerts,
 } from '../hooks/useSmartAlerts';
-import { AlertMatchResult, ScoreWeights, SmartAlertFormData, WeightedKeyword } from '../types/smartAlerts';
+import { AlertMatchResult, ScoreBreakdown, ScoreWeights, SmartAlert, SmartAlertFormData, WeightedKeyword } from '../types/smartAlerts';
 
 type SmartAlertTab = 'new' | 'results' | 'saved' | 'history';
 
@@ -111,6 +121,54 @@ const scoreWeightItems: Array<{ key: keyof ScoreWeights; label: string; helper: 
   { key: 'motsCles', label: 'Mots-cles', helper: 'Termes recherches/exclus' },
 ];
 
+const resultStatusLabels: Record<string, string> = {
+  new: 'Nouveau',
+  viewed: 'Consulté',
+  sent: 'Envoyé',
+  ignored: 'Ignoré',
+  favorite: 'Favori',
+  followed: 'Suivi',
+};
+
+const scoreBreakdownLabels: Array<{ key: keyof ScoreBreakdown; label: string }> = [
+  { key: 'localisation', label: 'Localisation' },
+  { key: 'budget', label: 'Budget' },
+  { key: 'type', label: 'Type' },
+  { key: 'surface', label: 'Surface' },
+  { key: 'exterieur', label: 'Extérieur' },
+  { key: 'etat', label: 'État' },
+  { key: 'dpe', label: 'DPE' },
+  { key: 'motsCles', label: 'Mots-clés' },
+];
+
+const alertToForm = (alert: SmartAlert): SmartAlertFormData => ({
+  nom_alerte: alert.nom_alerte,
+  type_recherche: alert.type_recherche,
+  client_id: alert.client_id || undefined,
+  statut: alert.statut,
+  priorite: alert.priorite,
+  ville: alert.ville || '',
+  postal_codes: alert.postal_codes || [],
+  radius_km: alert.radius_km,
+  type_de_bien: alert.type_de_bien || '',
+  prix_min: alert.prix_min ?? undefined,
+  prix_max: alert.prix_max ?? undefined,
+  surface_min: alert.surface_min ?? undefined,
+  surface_max: alert.surface_max ?? undefined,
+  rooms_min: alert.rooms_min ?? undefined,
+  bedrooms_min: alert.bedrooms_min ?? undefined,
+  matching_threshold: alert.matching_threshold,
+  frequence_analyse: alert.frequence_analyse,
+  options_avancees: {
+    ...defaultSmartAlertCriteria,
+    ...alert.options_avancees,
+    scoreWeights: {
+      ...defaultScoreWeights,
+      ...(alert.options_avancees?.scoreWeights || {}),
+    },
+  },
+});
+
 const SmartAlerts: React.FC = () => {
   const {
     clients,
@@ -125,18 +183,26 @@ const SmartAlerts: React.FC = () => {
     error,
     createClient,
     saveAlert,
+    updateAlertStatus,
+    deleteAlert,
+    duplicateAlert,
     runMatching,
     updateResultStatus,
     addFavorite,
     addToFollowUp,
     markNotificationRead,
+    toggleNotificationRead,
+    prepareOutreachMessage,
     toNumber,
   } = useSmartAlerts();
   const [activeTab, setActiveTab] = useState<SmartAlertTab>('new');
   const [form, setForm] = useState<SmartAlertFormData>(initialForm);
+  const [editingAlertId, setEditingAlertId] = useState<string | null>(null);
   const [clientForm, setClientForm] = useState({ first_name: '', last_name: '', email: '', phone: '', notes: '' });
   const [showClientForm, setShowClientForm] = useState(false);
-  const [resultFilter, setResultFilter] = useState({ minScore: 0, city: '', status: 'all' });
+  const [resultFilter, setResultFilter] = useState({ minScore: 0, city: '', status: 'all', type: '', budgetMax: '', sort: 'score' });
+  const [generatingMessageId, setGeneratingMessageId] = useState<string | null>(null);
+  const [generatedSummary, setGeneratedSummary] = useState<string[]>([]);
   const scoreWeights = form.options_avancees.scoreWeights || defaultScoreWeights;
   const scoreWeightTotal = Object.values(scoreWeights).reduce((sum, value) => sum + value, 0);
 
@@ -146,13 +212,23 @@ const SmartAlerts: React.FC = () => {
   );
 
   const filteredResults = useMemo(() => {
-    return results.filter(result => {
+    const budgetMax = toNumber(resultFilter.budgetMax);
+    const filtered = results.filter(result => {
       const cityOk = !resultFilter.city || result.annonce?.city?.toLowerCase().includes(resultFilter.city.toLowerCase());
       const scoreOk = result.score_pertinence >= resultFilter.minScore;
       const statusOk = resultFilter.status === 'all' || result.statut_commercial === resultFilter.status;
-      return cityOk && scoreOk && statusOk;
+      const typeOk = !resultFilter.type || result.annonce?.type_de_bien?.toLowerCase().includes(resultFilter.type.toLowerCase());
+      const budgetOk = budgetMax === undefined || (result.annonce?.price || 0) <= budgetMax;
+      return cityOk && scoreOk && statusOk && typeOk && budgetOk;
     });
-  }, [results, resultFilter]);
+
+    return [...filtered].sort((a, b) => {
+      if (resultFilter.sort === 'recent') return new Date(b.date_matching).getTime() - new Date(a.date_matching).getTime();
+      if (resultFilter.sort === 'price') return (a.annonce?.price || 0) - (b.annonce?.price || 0);
+      if (resultFilter.sort === 'surface') return (b.annonce?.size || 0) - (a.annonce?.size || 0);
+      return b.score_pertinence - a.score_pertinence;
+    });
+  }, [results, resultFilter, toNumber]);
 
   const stats = {
     activeAlerts: alerts.filter(alert => alert.statut === 'active').length,
@@ -204,27 +280,63 @@ const SmartAlerts: React.FC = () => {
       return;
     }
     const parsed = parseNaturalLanguageCriteria(text);
+    const parsedOptions = parsed.options_avancees || defaultSmartAlertCriteria;
+    const summary = [
+      parsed.ville ? `Ville: ${parsed.ville}` : null,
+      parsed.type_de_bien ? `Type: ${parsed.type_de_bien}` : null,
+      parsed.prix_max ? `Budget max: ${formatPrice(parsed.prix_max)}` : null,
+      parsed.surface_min ? `Surface min: ${parsed.surface_min} m²` : null,
+      parsed.bedrooms_min ? `Chambres min: ${parsed.bedrooms_min}` : null,
+      parsedOptions.exterior === 'required' ? 'Extérieur obligatoire' : null,
+      parsedOptions.positiveKeywords?.length ? `Mots-clés: ${keywordString(parsedOptions.positiveKeywords)}` : null,
+      parsedOptions.forbiddenWorks?.length ? `Exclus: ${parsedOptions.forbiddenWorks.join(', ')}` : null,
+    ].filter((item): item is string => Boolean(item));
+
     setForm(prev => ({
       ...prev,
       ...parsed,
+      nom_alerte: parsed.ville || parsed.type_de_bien
+        ? `${parsed.type_de_bien || prev.type_de_bien || 'Recherche'} ${parsed.ville || prev.ville || ''}`.trim()
+        : prev.nom_alerte,
       options_avancees: {
         ...prev.options_avancees,
         ...(parsed.options_avancees || {}),
         scoreWeights: prev.options_avancees.scoreWeights,
       },
     }));
-    toast.success('Critères générés');
+    setGeneratedSummary(summary);
+    toast.success(summary.length ? `${summary.length} critère(s) généré(s)` : 'Texte enregistré, aucun critère automatique détecté');
   };
 
   const handleSaveAndRun = async () => {
-    const alert = await saveAlert(form);
-    await runMatching(alert);
-    setActiveTab('results');
+    try {
+      const alert = await saveAlert(form, editingAlertId || undefined);
+      setEditingAlertId(null);
+      setSelectedAlertId(alert.id);
+
+      if (alert.statut === 'active') {
+        try {
+          await runMatching(alert);
+          setActiveTab('results');
+        } catch (err: any) {
+          toast.error(err.message || "Recherche enregistrée, mais l'analyse n'a pas pu se lancer");
+          setActiveTab('saved');
+        }
+      } else {
+        setActiveTab('saved');
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Impossible d'enregistrer la recherche");
+    }
   };
 
   const handlePreview = async () => {
-    await runMatching(form);
-    setActiveTab('results');
+    try {
+      await runMatching(form);
+      setActiveTab('results');
+    } catch (err: any) {
+      toast.error(err.message || "Impossible de prévisualiser les matches");
+    }
   };
 
   const handleSavedAlertRun = async () => {
@@ -232,7 +344,76 @@ const SmartAlerts: React.FC = () => {
       toast.error('Sélectionne une recherche sauvegardée');
       return;
     }
-    await runMatching(selectedAlert);
+    try {
+      await runMatching(selectedAlert);
+      setActiveTab('results');
+    } catch (err: any) {
+      toast.error(err.message || "Impossible de lancer l'analyse");
+    }
+  };
+
+  const handleNewSearch = () => {
+    setEditingAlertId(null);
+    setForm(initialForm);
+    setGeneratedSummary([]);
+    setActiveTab('new');
+  };
+
+  const handleEditAlert = (alert: SmartAlert) => {
+    setEditingAlertId(alert.id);
+    setSelectedAlertId(alert.id);
+    setForm(alertToForm(alert));
+    setGeneratedSummary([]);
+    setActiveTab('new');
+  };
+
+  const handleDuplicateAlert = async (alert: SmartAlert) => {
+    const duplicated = await duplicateAlert(alert);
+    setEditingAlertId(duplicated.id);
+    setForm(alertToForm(duplicated));
+    setGeneratedSummary([]);
+    setActiveTab('new');
+  };
+
+  const handleArchiveAlert = async (alert: SmartAlert) => {
+    if (!window.confirm(`Archiver "${alert.nom_alerte}" ?`)) return;
+    await updateAlertStatus(alert.id, 'archived');
+  };
+
+  const handleDeleteAlert = async (alert: SmartAlert) => {
+    if (!window.confirm(`Supprimer définitivement "${alert.nom_alerte}" et ses résultats ?`)) return;
+    await deleteAlert(alert.id);
+  };
+
+  const handleOpenSource = async (result: AlertMatchResult) => {
+    if (!result.annonce) return;
+    await updateResultStatus(result.id, 'viewed');
+    window.open(result.annonce.url, '_blank');
+  };
+
+  const handleOpenInternal = async (result: AlertMatchResult) => {
+    if (!result.annonce) return;
+    await updateResultStatus(result.id, 'viewed');
+    window.open(`/pige/${result.annonce.id}`, '_blank');
+  };
+
+  const handleCopyOutreach = async (result: AlertMatchResult, mode: 'email' | 'sms') => {
+    setGeneratingMessageId(`${result.id}-${mode}`);
+    try {
+      const message = await prepareOutreachMessage(result, mode);
+      await navigator.clipboard.writeText(message);
+      toast.success(mode === 'email' ? 'Email copié' : 'Message WhatsApp/SMS copié');
+    } catch (err: any) {
+      toast.error(err.message || 'Impossible de préparer le message');
+    } finally {
+      setGeneratingMessageId(null);
+    }
+  };
+
+  const handleNotificationOpen = (notification: typeof notifications[number]) => {
+    const alerteId = notification.contenu.alerte_id;
+    if (alerteId) setSelectedAlertId(alerteId);
+    void toggleNotificationRead(notification.id, true);
     setActiveTab('results');
   };
 
@@ -262,7 +443,7 @@ const SmartAlerts: React.FC = () => {
                 <div className="mb-2 flex flex-wrap items-center gap-2">
                   <span className={`rounded-full border px-2 py-1 text-xs font-bold ${badge.tone}`}>{badge.label}</span>
                   <span className="rounded-full bg-secondary-100 px-2 py-1 text-xs font-semibold text-secondary-700">{annonce.source}</span>
-                  <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">{result.statut_commercial}</span>
+                  <span className="rounded-full bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-600">{resultStatusLabels[result.statut_commercial] || result.statut_commercial}</span>
                 </div>
                 <h3 className="line-clamp-2 text-lg font-bold text-secondary-900">{annonce.title}</h3>
                 <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-secondary-600">
@@ -283,6 +464,23 @@ const SmartAlerts: React.FC = () => {
 
             <p className="mt-3 text-sm leading-6 text-secondary-600">{result.resume}</p>
 
+            <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+              {scoreBreakdownLabels.map(item => {
+                const value = Number(result.score_breakdown?.[item.key] || 0);
+                return (
+                  <div key={item.key} className="rounded-xl border border-gray-100 bg-gray-50 p-2">
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-bold text-secondary-600">
+                      <span className="truncate">{item.label}</span>
+                      <span>{value}</span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-200">
+                      <div className="h-full rounded-full bg-primary-500" style={{ width: `${Math.min(100, value)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
             <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
               <div className="rounded-xl bg-emerald-50 p-3">
                 <p className="mb-2 text-xs font-bold uppercase text-emerald-700">Points forts</p>
@@ -299,7 +497,10 @@ const SmartAlerts: React.FC = () => {
             </div>
 
             <div className="mt-4 flex flex-wrap gap-2">
-              <button onClick={() => window.open(annonce.url, '_blank')} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-secondary-700 hover:bg-gray-50">
+              <button onClick={() => handleOpenInternal(result)} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-secondary-700 hover:bg-gray-50">
+                <Home className="mr-2 h-4 w-4" /> Fiche interne
+              </button>
+              <button onClick={() => handleOpenSource(result)} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-secondary-700 hover:bg-gray-50">
                 <ExternalLink className="mr-2 h-4 w-4" /> Source
               </button>
               <button onClick={() => addFavorite(annonce.id, result.id)} className="inline-flex items-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
@@ -319,9 +520,26 @@ const SmartAlerts: React.FC = () => {
               </button>
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-secondary-500">
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1"><Mail className="h-3 w-3" /> Email préparé</span>
-              <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-1"><MessageCircle className="h-3 w-3" /> WhatsApp préparé</span>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                onClick={() => handleCopyOutreach(result, 'email')}
+                disabled={generatingMessageId === `${result.id}-email`}
+                className="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-secondary-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                {generatingMessageId === `${result.id}-email` ? 'Préparation...' : 'Copier email'}
+              </button>
+              <button
+                onClick={() => handleCopyOutreach(result, 'sms')}
+                disabled={generatingMessageId === `${result.id}-sms`}
+                className="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-secondary-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <MessageCircle className="mr-2 h-4 w-4" />
+                {generatingMessageId === `${result.id}-sms` ? 'Préparation...' : 'Copier WhatsApp'}
+              </button>
+              <button onClick={() => updateResultStatus(result.id, 'sent')} className="inline-flex items-center rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-secondary-700 hover:bg-gray-50">
+                <Copy className="mr-2 h-4 w-4" /> Marquer envoyé
+              </button>
             </div>
           </div>
         </div>
@@ -338,7 +556,7 @@ const SmartAlerts: React.FC = () => {
         actions={
           <>
             <button
-              onClick={() => setActiveTab('new')}
+              onClick={handleNewSearch}
               className="inline-flex items-center rounded-xl bg-primary-600 px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-primary-700"
             >
               <Plus className="mr-2 h-4 w-4" />
@@ -381,6 +599,15 @@ const SmartAlerts: React.FC = () => {
         {activeTab === 'new' && (
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
             <div className="space-y-5">
+              {editingAlertId && (
+                <div className="flex flex-col gap-3 rounded-2xl border border-primary-200 bg-primary-50 p-4 text-sm text-primary-900 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="font-bold">Modification de la recherche sauvegardée</span>
+                  <button onClick={handleNewSearch} className="inline-flex items-center rounded-xl border border-primary-200 bg-white px-3 py-2 text-sm font-bold text-primary-800">
+                    <Plus className="mr-2 h-4 w-4" />
+                    Nouvelle recherche
+                  </button>
+                </div>
+              )}
               <section className="rounded-2xl border border-gray-200 bg-white p-4">
                 <div className="mb-4 flex items-center gap-2">
                   <Bot className="h-5 w-5 text-primary-600" />
@@ -396,6 +623,18 @@ const SmartAlerts: React.FC = () => {
                   <Sparkles className="mr-2 h-4 w-4" />
                   Générer les critères
                 </button>
+                {generatedSummary.length > 0 && (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                    <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">Critères appliqués</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {generatedSummary.map(item => (
+                        <span key={item} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-emerald-800 shadow-sm">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </section>
 
               <section className="grid grid-cols-1 gap-4 rounded-2xl border border-gray-200 bg-white p-4 md:grid-cols-2">
@@ -573,6 +812,48 @@ const SmartAlerts: React.FC = () => {
                   </select>
                 </div>
                 <div>
+                  <label className={labelClass}>Types secondaires</label>
+                  <input className={inputClass} value={form.options_avancees.secondaryTypes.join(', ')} onChange={event => updateCriteria('secondaryTypes', parseList(event.target.value))} />
+                </div>
+                <div>
+                  <label className={labelClass}>Garage / parking</label>
+                  <select
+                    className={inputClass}
+                    value={String(form.options_avancees.parking?.garage || 'any')}
+                    onChange={event => updateCriteria('parking', { ...form.options_avancees.parking, garage: event.target.value as WeightedKeyword['importance'] | 'any' })}
+                  >
+                    <option value="any">Peu importe</option>
+                    <option value="medium">Souhaité</option>
+                    <option value="high">Important</option>
+                    <option value="required">Obligatoire</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Prix au m² investisseur max</label>
+                  <input
+                    className={inputClass}
+                    type="number"
+                    value={form.options_avancees.investor?.maxPricePerSqm || ''}
+                    onChange={event => updateCriteria('investor', {
+                      ...(form.options_avancees.investor || { enabled: false, potential: [] }),
+                      enabled: Boolean(event.target.value),
+                      maxPricePerSqm: toNumber(event.target.value),
+                    })}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Signaux investisseur</label>
+                  <input
+                    className={inputClass}
+                    value={(form.options_avancees.investor?.potential || []).join(', ')}
+                    onChange={event => updateCriteria('investor', {
+                      ...(form.options_avancees.investor || { enabled: false }),
+                      enabled: parseList(event.target.value).length > 0 || Boolean(form.options_avancees.investor?.maxPricePerSqm),
+                      potential: parseList(event.target.value),
+                    })}
+                  />
+                </div>
+                <div>
                   <label className={labelClass}>Fréquence</label>
                   <select className={inputClass} value={form.frequence_analyse} onChange={event => updateForm('frequence_analyse', event.target.value as SmartAlertFormData['frequence_analyse'])}>
                     <option value="realtime">Temps réel</option>
@@ -587,7 +868,7 @@ const SmartAlerts: React.FC = () => {
               <div className="flex flex-wrap gap-3">
                 <button onClick={handleSaveAndRun} disabled={matching} className="inline-flex items-center rounded-xl bg-primary-600 px-5 py-3 text-sm font-bold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50">
                   <Radar className="mr-2 h-4 w-4" />
-                  Enregistrer et lancer
+                  {editingAlertId ? 'Mettre à jour et lancer' : 'Enregistrer et lancer'}
                 </button>
                 <button onClick={handlePreview} disabled={matching} className="inline-flex items-center rounded-xl border border-gray-200 bg-white px-5 py-3 text-sm font-bold text-secondary-700 shadow-sm hover:bg-gray-50 disabled:opacity-50">
                   <Eye className="mr-2 h-4 w-4" />
@@ -677,7 +958,7 @@ const SmartAlerts: React.FC = () => {
 
         {activeTab === 'results' && (
           <div className="space-y-5">
-            <div className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 md:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 md:grid-cols-7">
               <div>
                 <label className={labelClass}>Score minimum</label>
                 <input className={inputClass} type="number" value={resultFilter.minScore} onChange={event => setResultFilter(prev => ({ ...prev, minScore: toNumber(event.target.value) || 0 }))} />
@@ -691,13 +972,32 @@ const SmartAlerts: React.FC = () => {
                 <select className={inputClass} value={resultFilter.status} onChange={event => setResultFilter(prev => ({ ...prev, status: event.target.value }))}>
                   <option value="all">Tous</option>
                   <option value="new">Nouveau</option>
+                  <option value="viewed">Consulté</option>
                   <option value="sent">Envoyé</option>
                   <option value="ignored">Ignoré</option>
                   <option value="favorite">Favori</option>
                   <option value="followed">Suivi</option>
                 </select>
               </div>
+              <div>
+                <label className={labelClass}>Type</label>
+                <input className={inputClass} value={resultFilter.type} onChange={event => setResultFilter(prev => ({ ...prev, type: event.target.value }))} />
+              </div>
+              <div>
+                <label className={labelClass}>Budget max</label>
+                <input className={inputClass} type="number" value={resultFilter.budgetMax} onChange={event => setResultFilter(prev => ({ ...prev, budgetMax: event.target.value }))} />
+              </div>
+              <div>
+                <label className={labelClass}>Tri</label>
+                <select className={inputClass} value={resultFilter.sort} onChange={event => setResultFilter(prev => ({ ...prev, sort: event.target.value }))}>
+                  <option value="score">Meilleur score</option>
+                  <option value="recent">Plus récent</option>
+                  <option value="price">Prix croissant</option>
+                  <option value="surface">Surface décroissante</option>
+                </select>
+              </div>
               <button onClick={handleSavedAlertRun} disabled={matching || !selectedAlert} className="self-end rounded-xl bg-secondary-900 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
+                <ArrowUpDown className="mr-2 inline h-4 w-4" />
                 {matching ? 'Analyse...' : 'Relancer'}
               </button>
             </div>
@@ -723,29 +1023,53 @@ const SmartAlerts: React.FC = () => {
             ) : alerts.map(alert => {
               const isSelected = alert.id === selectedAlertId;
               return (
-                <button
+                <article
                   key={alert.id}
-                  onClick={() => {
-                    setSelectedAlertId(alert.id);
-                    setActiveTab('results');
-                  }}
                   className={`w-full rounded-2xl border p-4 text-left transition ${isSelected ? 'border-primary-300 bg-primary-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
                 >
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
+                    <button
+                      onClick={() => {
+                        setSelectedAlertId(alert.id);
+                        setActiveTab('results');
+                      }}
+                      className="min-w-0 flex-1 text-left"
+                    >
                       <h3 className="text-lg font-bold text-secondary-900">{alert.nom_alerte}</h3>
                       <p className="mt-1 text-sm text-secondary-600">
                         {alert.client ? `${alert.client.first_name} ${alert.client.last_name} · ` : ''}
                         {alert.ville || 'Zone libre'} + {alert.radius_km} km · {formatPrice(alert.prix_max)} · seuil {alert.matching_threshold}%
                       </p>
-                    </div>
+                    </button>
                     <div className="flex flex-wrap gap-2 text-xs font-bold">
                       <span className="rounded-full bg-secondary-100 px-3 py-1 text-secondary-700">{alert.statut}</span>
                       <span className="rounded-full bg-primary-100 px-3 py-1 text-primary-800">{alert.priorite}</span>
                       <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-700">Dernière analyse: {formatDate(alert.last_matching_date)}</span>
                     </div>
                   </div>
-                </button>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button onClick={() => handleEditAlert(alert)} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-secondary-700 hover:bg-gray-50">
+                      <Edit3 className="mr-2 h-4 w-4" /> Modifier
+                    </button>
+                    <button
+                      onClick={() => updateAlertStatus(alert.id, alert.statut === 'active' ? 'paused' : 'active')}
+                      disabled={alert.statut === 'archived' || alert.statut === 'abandoned'}
+                      className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-secondary-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {alert.statut === 'active' ? <Pause className="mr-2 h-4 w-4" /> : <Play className="mr-2 h-4 w-4" />}
+                      {alert.statut === 'active' ? 'Pause' : 'Reprendre'}
+                    </button>
+                    <button onClick={() => handleDuplicateAlert(alert)} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-secondary-700 hover:bg-gray-50">
+                      <RotateCcw className="mr-2 h-4 w-4" /> Dupliquer
+                    </button>
+                    <button onClick={() => handleArchiveAlert(alert)} disabled={alert.statut === 'archived'} className="inline-flex items-center rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-800 disabled:opacity-50">
+                      <Archive className="mr-2 h-4 w-4" /> Archiver
+                    </button>
+                    <button onClick={() => handleDeleteAlert(alert)} className="inline-flex items-center rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+                      <Trash2 className="mr-2 h-4 w-4" /> Supprimer
+                    </button>
+                  </div>
+                </article>
               );
             })}
           </div>
@@ -762,13 +1086,20 @@ const SmartAlerts: React.FC = () => {
                   <p className="mt-1 text-sm text-secondary-600">{notification.contenu.message || 'Nouvelle activité de matching'}</p>
                   <p className="mt-1 text-xs text-secondary-400">{formatDate(notification.created_at)}</p>
                 </div>
-                <button
-                  onClick={() => markNotificationRead(notification.id)}
-                  disabled={Boolean(notification.read_at)}
-                  className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-secondary-700 disabled:opacity-50"
-                >
-                  {notification.read_at ? 'Lue' : 'Marquer lue'}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => handleNotificationOpen(notification)}
+                    className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-secondary-700 hover:bg-gray-50"
+                  >
+                    <FileText className="mr-2 h-4 w-4" /> Voir résultats
+                  </button>
+                  <button
+                    onClick={() => notification.read_at ? toggleNotificationRead(notification.id, false) : markNotificationRead(notification.id)}
+                    className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-bold text-secondary-700"
+                  >
+                    {notification.read_at ? 'Marquer non lue' : 'Marquer lue'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
