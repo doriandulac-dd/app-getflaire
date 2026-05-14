@@ -202,6 +202,7 @@ const SmartAlerts: React.FC = () => {
   const [clientForm, setClientForm] = useState({ first_name: '', last_name: '', email: '', phone: '', notes: '' });
   const [showClientForm, setShowClientForm] = useState(false);
   const [resultFilter, setResultFilter] = useState({ minScore: 0, city: '', status: 'all', type: '', budgetMax: '', sort: 'score' });
+  const [showIgnoredResults, setShowIgnoredResults] = useState(false);
   const [generatingMessageId, setGeneratingMessageId] = useState<string | null>(null);
   const [generatedSummary, setGeneratedSummary] = useState<string[]>([]);
   const scoreWeights = form.options_avancees.scoreWeights || defaultScoreWeights;
@@ -218,7 +219,7 @@ const SmartAlerts: React.FC = () => {
       const cityOk = !resultFilter.city || result.annonce?.city?.toLowerCase().includes(resultFilter.city.toLowerCase());
       const scoreOk = result.score_pertinence >= resultFilter.minScore;
       const statusOk = resultFilter.status === 'all'
-        ? result.statut_commercial !== 'ignored'
+        ? showIgnoredResults || result.statut_commercial !== 'ignored'
         : result.statut_commercial === resultFilter.status;
       const typeOk = !resultFilter.type || result.annonce?.type_de_bien?.toLowerCase().includes(resultFilter.type.toLowerCase());
       const budgetOk = budgetMax === undefined || (result.annonce?.price || 0) <= budgetMax;
@@ -231,7 +232,12 @@ const SmartAlerts: React.FC = () => {
       if (resultFilter.sort === 'surface') return (b.annonce?.size || 0) - (a.annonce?.size || 0);
       return b.score_pertinence - a.score_pertinence;
     });
-  }, [results, resultFilter, toNumber]);
+  }, [results, resultFilter, showIgnoredResults, toNumber]);
+
+  const ignoredResultsCount = useMemo(
+    () => results.filter(result => result.statut_commercial === 'ignored').length,
+    [results]
+  );
 
   const stats = {
     activeAlerts: alerts.filter(alert => alert.statut === 'active').length,
@@ -427,6 +433,11 @@ const SmartAlerts: React.FC = () => {
     toast.success('Annonce ignorée');
   };
 
+  const handleRestoreIgnoredResult = async (resultId: string) => {
+    await updateResultStatus(resultId, 'new');
+    toast.success('Annonce réactivée');
+  };
+
   const handleNotificationOpen = (notification: typeof notifications[number]) => {
     const alerteId = notification.contenu.alerte_id;
     if (alerteId) setSelectedAlertId(alerteId);
@@ -535,6 +546,11 @@ const SmartAlerts: React.FC = () => {
               <button onClick={() => handleIgnoreResult(result.id)} className="inline-flex items-center rounded-xl border border-gray-200 px-3 py-2 text-sm font-semibold text-secondary-500 hover:bg-gray-50">
                 <XCircle className="mr-2 h-4 w-4" /> Ignorer
               </button>
+              {result.statut_commercial === 'ignored' ? (
+                <button onClick={() => handleRestoreIgnoredResult(result.id)} className="inline-flex items-center rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100">
+                  <RotateCcw className="mr-2 h-4 w-4" /> Réactiver
+                </button>
+              ) : null}
             </div>
 
             <div className="mt-3 flex flex-wrap gap-2">
@@ -1037,6 +1053,36 @@ const SmartAlerts: React.FC = () => {
                 <ArrowUpDown className="mr-2 inline h-4 w-4" />
                 {matching ? 'Analyse...' : 'Relancer'}
               </button>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-2xl border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-bold text-secondary-900">Visibilité des annonces ignorées</p>
+                <p className="text-sm text-secondary-600">
+                  Affiche aussi les annonces déjà ignorées pour cette alerte intelligente.
+                </p>
+              </div>
+              <label className="flex items-center justify-between gap-3 rounded-xl border border-gray-200 px-3 py-2 sm:min-w-72">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-secondary-800">Afficher les ignorées</p>
+                  <p className="text-xs text-secondary-500">{ignoredResultsCount} annonce(s) ignorée(s) sur cette alerte</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showIgnoredResults}
+                  onClick={() => setShowIgnoredResults(value => !value)}
+                  className={`relative inline-flex h-7 w-12 items-center rounded-full transition ${
+                    showIgnoredResults ? 'bg-primary-600' : 'bg-gray-300'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                      showIgnoredResults ? 'translate-x-6' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </label>
             </div>
 
             {matching || loading ? (
