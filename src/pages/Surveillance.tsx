@@ -415,7 +415,7 @@ const Surveillance: React.FC = () => {
                   <p className="text-xs font-bold uppercase tracking-[0.16em] text-secondary-500">Stock disponible</p>
                   <h2 className="text-xl font-black text-secondary-950">Ajouter de nouvelles annonces</h2>
                 </div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-2 text-xs font-bold text-primary-700">
+                <div className="inline-flex items-center gap-2 rounded-full bg-primary-600 px-3 py-2 text-xs font-bold text-white shadow-sm">
                   <Sparkles className="h-3.5 w-3.5" />
                   Bouton surveillance actif sur les cartes
                 </div>
@@ -453,7 +453,7 @@ const Surveillance: React.FC = () => {
                           event.preventDefault();
                           loadWithStableScroll(loadMore);
                         }}
-                        className="rounded-2xl bg-secondary-950 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-secondary-900/20 transition hover:bg-secondary-800"
+                        className="inline-flex items-center rounded-2xl bg-primary-600 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-primary-500/20 transition hover:-translate-y-0.5 hover:bg-primary-700 focus:outline-none focus:ring-4 focus:ring-primary-100"
                       >
                         Charger plus d'annonces
                       </button>

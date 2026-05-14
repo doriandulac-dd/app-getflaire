@@ -159,7 +159,6 @@ export const useSurveillance = () => {
         .from('surveillances')
         .insert({
           user_id: appUser.id,
-          agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
           annonce_id: annonceId,
           notes: notes,
           active: true,
@@ -211,10 +210,11 @@ export const useSurveillance = () => {
         .eq('annonce_id', annonceId)
         .in('user_id', activityScope.userIds)
         .eq('active', true)
-        .maybeSingle();
+        .limit(1);
       if (error) throw error;
-      return !!data;
+      return (data || []).length > 0;
     } catch (error) {
+      console.error('[surveillance] status check error', error);
       return false;
     }
   };

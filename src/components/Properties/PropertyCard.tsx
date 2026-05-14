@@ -32,6 +32,14 @@ interface PropertyCardProps {
   listLoadedCount?: number;
 }
 
+type SurveillanceRow = {
+  id: string;
+  active: boolean | null;
+  user_id: string | null;
+  created_at: string | null;
+  date_surveillance: string | null;
+};
+
 const PropertyCard: React.FC<PropertyCardProps> = ({
   annonce,
   onStatusChange,
@@ -76,27 +84,46 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
     setIsUnderSurveillance(surveilled);
   };
 
+  const getPreferredSurveillance = (rows: SurveillanceRow[], activeOnly = false) => {
+    const scopedRows = activeOnly ? rows.filter((row) => row.active) : rows;
+    const currentUserRow = scopedRows.find((row) => row.user_id === appUser?.id);
+    if (currentUserRow) return currentUserRow;
+
+    return scopedRows[0] || null;
+  };
+
   const handleAddToSurveillance = async (e: React.MouseEvent) => {
     e.stopPropagation();
+
+    if (!appUser?.id || activityScope.userIds.length === 0) {
+      toast.error('Impossible de modifier la surveillance pour cet utilisateur.');
+      return;
+    }
+
     setLoading(true);
 
     try {
+      const { data: surveillanceRows, error: fetchError } = await supabase
+        .from('surveillances')
+        .select('id, active, user_id, created_at, date_surveillance')
+        .eq('annonce_id', annonce.id)
+        .in('user_id', activityScope.userIds)
+        .order('active', { ascending: false })
+        .order('date_surveillance', { ascending: false })
+        .order('created_at', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      const rows = (surveillanceRows || []) as SurveillanceRow[];
+
       if (isUnderSurveillance) {
-        const { data: surveillanceData, error: fetchError } = await supabase
-          .from('surveillances')
-          .select('id')
-          .eq('annonce_id', annonce.id)
-          .eq('active', true)
-          .in('user_id', activityScope.userIds)
-          .maybeSingle();
+        const activeSurveillance = getPreferredSurveillance(rows, true);
 
-        if (fetchError) throw fetchError;
-
-        if (surveillanceData) {
+        if (activeSurveillance) {
           const { error: updateError } = await supabase
             .from('surveillances')
-            .update({ active: false, user_id: appUser?.id, agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null })
-            .eq('id', surveillanceData.id);
+            .update({ active: false })
+            .eq('id', activeSurveillance.id);
 
           if (updateError) throw updateError;
           toast.success('Surveillance arrêtée');
@@ -105,27 +132,19 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
           toast.error('Aucune surveillance active trouvée');
         }
       } else {
-        const { data: existing, error: fetchError } = await supabase
-          .from('surveillances')
-          .select('id, active')
-          .eq('annonce_id', annonce.id)
-          .in('user_id', activityScope.userIds)
-          .maybeSingle();
-
-        if (fetchError) throw fetchError;
+        const existing = getPreferredSurveillance(rows);
 
         if (existing) {
           const { error: updateError } = await supabase
             .from('surveillances')
-            .update({ active: true, user_id: appUser?.id, agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null })
+            .update({ active: true, user_id: appUser.id })
             .eq('id', existing.id);
 
           if (updateError) throw updateError;
           toast.success('Surveillance réactivée');
         } else {
           const { error: insertError } = await supabase.from('surveillances').insert({
-            user_id: appUser?.id,
-            agency_id: activityScope.isAgencyScope ? activityScope.agencyId : null,
+            user_id: appUser.id,
             annonce_id: annonce.id,
             active: true,
             created_at: new Date().toISOString(),
@@ -136,8 +155,9 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
         }
         await checkSurveillanceStatus();
       }
-    } catch {
-      toast.error('Erreur lors du changement de surveillance');
+    } catch (error: any) {
+      console.error('[surveillance] toggle error', error);
+      toast.error(error?.message || 'Erreur lors du changement de surveillance');
     } finally {
       setLoading(false);
     }
@@ -520,7 +540,11 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                   <span className="truncate font-medium text-secondary-700">{annonce.phone || 'Numéro non renseigné'}</span>
                 </div>
                 {showSurveillanceButton && (
-                  <span className="rounded-full bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    isUnderSurveillance
+                      ? 'bg-secondary-900 text-white'
+                      : 'bg-primary-600 text-white'
+                  }`}>
                     {isUnderSurveillance ? 'Surveillée' : 'Surveillance'}
                   </span>
                 )}
@@ -543,10 +567,10 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
                 <button
                   onClick={handleAddToSurveillance}
                   disabled={loading}
-                  className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                  className={`inline-flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${
                     isUnderSurveillance
-                      ? 'border border-red-200 bg-red-100 text-red-700 hover:bg-red-200'
-                      : 'border border-primary-200 bg-primary-100 text-primary-700 hover:bg-primary-200'
+                      ? 'border border-red-700 bg-red-700 text-white hover:bg-red-800 focus:ring-red-100'
+                      : 'border border-primary-600 bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-100'
                   }`}
                 >
                   <Eye className="h-4 w-4" />

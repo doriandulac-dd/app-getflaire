@@ -224,15 +224,20 @@ const SurveillanceSettings: React.FC<SurveillanceSettingsProps> = ({ isOpen, onC
                           key={option.value}
                           type="button"
                           onClick={() => handleInputChange('frequence_email', option.value)}
-                          className={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                          className={`flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left shadow-sm transition focus:outline-none focus:ring-4 ${
                             selected
-                              ? 'border-secondary-950 bg-secondary-950 text-white'
-                              : 'border-secondary-100 bg-secondary-50 text-secondary-700 hover:bg-white'
+                              ? 'border-primary-200 bg-primary-50 text-primary-900 focus:ring-primary-100'
+                              : 'border-secondary-200 bg-white text-secondary-900 hover:border-primary-200 hover:bg-primary-50/30 focus:ring-primary-100'
                           }`}
                         >
-                          <span className="block text-sm font-black">{option.label}</span>
-                          <span className={`block text-xs font-medium ${selected ? 'text-secondary-200' : 'text-secondary-500'}`}>
-                            {option.description}
+                          <span className="flex-1">
+                            <span className="block text-sm font-black">{option.label}</span>
+                            <span className={`block text-xs font-medium ${selected ? 'text-secondary-700' : 'text-secondary-600'}`}>
+                              {option.description}
+                            </span>
+                          </span>
+                          <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full ${selected ? 'bg-primary-500 text-white' : 'bg-white text-secondary-300 ring-1 ring-secondary-200'}`}>
+                            {selected && <Check className="h-3.5 w-3.5" />}
                           </span>
                         </button>
                       );
