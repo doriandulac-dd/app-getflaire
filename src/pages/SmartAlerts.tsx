@@ -85,6 +85,7 @@ const initialForm: SmartAlertFormData = {
 
 const inputClass = 'w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-secondary-900 shadow-sm focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-100';
 const labelClass = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-secondary-500';
+const dpeOptions = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
 
 const parseList = (value: string) =>
   value.split(',').map(item => item.trim()).filter(Boolean);
@@ -251,6 +252,15 @@ const SmartAlerts: React.FC = () => {
       ...prev,
       options_avancees: { ...prev.options_avancees, [key]: value },
     }));
+  };
+
+  const toggleDpeAccepted = (dpe: string) => {
+    const selected = form.options_avancees.dpeAccepted.includes(dpe);
+    const nextValues = selected
+      ? form.options_avancees.dpeAccepted.filter(value => value !== dpe)
+      : [...form.options_avancees.dpeAccepted, dpe];
+
+    updateCriteria('dpeAccepted', dpeOptions.filter(value => nextValues.includes(value)));
   };
 
   const updateScoreWeight = (key: keyof ScoreWeights, value: number) => {
@@ -775,7 +785,27 @@ const SmartAlerts: React.FC = () => {
                 </div>
                 <div>
                   <label className={labelClass}>DPE acceptés</label>
-                  <input className={inputClass} value={form.options_avancees.dpeAccepted.join(', ')} onChange={event => updateCriteria('dpeAccepted', parseList(event.target.value.toUpperCase()))} />
+                  <details className="group relative">
+                    <summary className={`${inputClass} flex cursor-pointer list-none items-center justify-between gap-2`}>
+                      <span className={form.options_avancees.dpeAccepted.length ? 'text-secondary-900' : 'text-secondary-400'}>
+                        {form.options_avancees.dpeAccepted.length ? form.options_avancees.dpeAccepted.join(', ') : 'Choisir les DPE'}
+                      </span>
+                      <span className="text-xs font-black text-secondary-400 transition group-open:rotate-180">⌄</span>
+                    </summary>
+                    <div className="absolute z-20 mt-2 w-full rounded-2xl border border-gray-200 bg-white p-2 shadow-xl">
+                      {dpeOptions.map(dpe => (
+                        <label key={dpe} className="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-secondary-700 hover:bg-primary-50">
+                          <input
+                            type="checkbox"
+                            checked={form.options_avancees.dpeAccepted.includes(dpe)}
+                            onChange={() => toggleDpeAccepted(dpe)}
+                            className="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          DPE {dpe}
+                        </label>
+                      ))}
+                    </div>
+                  </details>
                 </div>
                 <div>
                   <label className={labelClass}>Mode</label>
