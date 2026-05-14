@@ -8,6 +8,7 @@ interface PropertyFiltersProps {
   filters: PropertyFiltersType;
   onFiltersChange: (filters: PropertyFiltersType) => void;
   onClearFilters: () => void;
+  availableSources?: string[];
 }
 
 const propertyTypes = [
@@ -30,6 +31,7 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
   filters,
   onFiltersChange,
   onClearFilters,
+  availableSources = [],
 }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [cityInput, setCityInput] = useState('');
@@ -398,13 +400,18 @@ const PropertyFilters: React.FC<PropertyFiltersProps> = ({
               <div>
                 <p className="mb-3 text-sm font-semibold text-secondary-900">Source et date</p>
                 <div className="space-y-3">
-                  <input
-                    type="text"
-                    placeholder="Source"
+                  <select
                     value={filters.source || ''}
                     onChange={(e) => handleFilterChange('source', e.target.value || undefined)}
                     className="h-11 w-full rounded-2xl border border-gray-200 bg-white px-4 text-sm focus:border-primary-400 focus:ring-primary-500"
-                  />
+                  >
+                    <option value="">Toutes les sources</option>
+                    {availableSources.map((source) => (
+                      <option key={source} value={source}>
+                        {source}
+                      </option>
+                    ))}
+                  </select>
                   <div className="grid grid-cols-2 gap-2">
                     <input
                       type="date"

@@ -21,6 +21,7 @@ import { useActivityScope } from '../../hooks/useActivityScope';
 import toast from 'react-hot-toast';
 import { deletePropertyFavorite, fetchPropertyFavorites, savePropertyFavorite } from '../../utils/propertyFavorites';
 import { deletePropertyAction, fetchPropertyActivity, savePropertyAction } from '../../utils/propertyActivities';
+import { readAppScrollTop, savePigeScrollState } from '../../utils/pigeScroll';
 
 interface PropertyCardProps {
   annonce: Annonce;
@@ -28,6 +29,7 @@ interface PropertyCardProps {
   showSurveillanceButton?: boolean;
   onCardClick?: (annonceId: string) => void;
   variant?: 'grid' | 'list';
+  listLoadedCount?: number;
 }
 
 const PropertyCard: React.FC<PropertyCardProps> = ({
@@ -36,6 +38,7 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
   showSurveillanceButton = false,
   onCardClick,
   variant = 'grid',
+  listLoadedCount = 0,
 }) => {
   const { appUser } = useAuth();
   const activityScope = useActivityScope();
@@ -321,10 +324,17 @@ const PropertyCard: React.FC<PropertyCardProps> = ({
 
   const openDetails = (e?: React.MouseEvent) => {
     e?.stopPropagation();
+
+    savePigeScrollState({
+      scrollTop: readAppScrollTop(),
+      loadedCount: listLoadedCount,
+      restorePending: true,
+    });
+
     if (onCardClick) {
       onCardClick(annonce.id);
     } else {
-      navigate(`/pige/${annonce.id}`);
+      navigate(`/pige/${annonce.id}`, { state: { fromPige: true } });
     }
   };
 

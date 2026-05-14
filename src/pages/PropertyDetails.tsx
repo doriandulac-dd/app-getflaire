@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useGSAP } from '@gsap/react';
 import {
   AlertCircle,
@@ -140,6 +140,7 @@ const getContactName = (sourceDetails: SourceDetails) => {
 
 const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }) => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
   const navigate = useNavigate();
   const { appUser } = useAuth();
   const activityScope = useActivityScope();
@@ -309,6 +310,7 @@ const PropertyDetails: React.FC<PropertyDetailsProps> = ({ id: propId, onClose }
 
   const goBack = () => {
     if (onClose) onClose();
+    else if ((location.state as { fromPige?: boolean } | null)?.fromPige) navigate(-1);
     else navigate('/pige');
   };
 

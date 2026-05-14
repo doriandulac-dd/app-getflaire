@@ -194,14 +194,14 @@ const DEPARTMENT_NAME_TO_CODE = Object.entries(DEPARTMENT_LABELS).reduce((map, [
   return map;
 }, new Map<string, string>());
 
-const normalizeDepartments = (departments?: string[]) =>
+export const normalizeDepartments = (departments?: string[]) =>
   Array.from(new Set((departments || []).map(department => {
     const code = normalizeDepartment(department);
     if (code) return code;
     return DEPARTMENT_NAME_TO_CODE.get(normalizeText(department)) || '';
   }).filter(Boolean)));
 
-const getDepartmentLabels = (department: string) => DEPARTMENT_LABELS[department] || [];
+export const getDepartmentLabels = (department: string) => DEPARTMENT_LABELS[department] || [];
 
 const getStatusPriority = (annonce: Annonce) => {
   if (annonce.favorite_user_ids?.length) return 0;

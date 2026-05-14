@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useGSAP } from '@gsap/react';
 import {
   ArrowUpRight,
@@ -17,17 +17,54 @@ import { PropertyFilters as PropertyFiltersType, SortOption } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { useGsapReveal } from '../hooks/useGsapReveal';
 import { gsap } from '../lib/animations';
+import {
+  clearPigeScrollState,
+  getAppScrollContainer,
+  readPigeScrollState,
+  scrollAppTo,
+  type PigeScrollState,
+} from '../utils/pigeScroll';
+import { supabase } from '../lib/supabase';
+import { buildDepartmentScopeFilter, normalizeDepartmentCodes } from '../utils/pigeScope';
+
+type PigeOverviewCounts = {
+  urgent: number;
+  withPhone: number;
+  withSignals: number;
+};
+
+type OverviewSignalMode = 'price-and-movement' | 'price-only';
+
+const defaultOverviewCounts: PigeOverviewCounts = {
+  urgent: 0,
+  withPhone: 0,
+  withSignals: 0,
+};
+
+const isMissingModificationColumnError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? error.code : undefined;
+  const message = 'message' in error ? error.message : '';
+  return code === '42703' && typeof message === 'string' && message.includes('nb_modifications');
+};
 
 const Pige: React.FC = () => {
   const { appUser } = useAuth();
   const [filters, setFilters] = useState<PropertyFiltersType>({});
   const [sort, setSort] = useState<SortOption>({ field: 'publication_date', direction: 'desc' });
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [overviewCounts, setOverviewCounts] = useState<PigeOverviewCounts>(defaultOverviewCounts);
+  const [totalAvailable, setTotalAvailable] = useState<number | null>(null);
+  const [isOverviewLoading, setIsOverviewLoading] = useState(false);
+  const [overviewCountsError, setOverviewCountsError] = useState<string | null>(null);
+  const [totalAvailableError, setTotalAvailableError] = useState<string | null>(null);
+  const [overviewSignalMode, setOverviewSignalMode] = useState<OverviewSignalMode>('price-and-movement');
+  const [availableSources, setAvailableSources] = useState<string[]>([]);
 
   const itemsPerPage = appUser?.personalization_settings?.items_per_page || 20;
   const authorizedDepartments = appUser?.departements_autorises || [];
   const hasNoAuthorizedDepartments = Boolean(appUser) && authorizedDepartments.length === 0;
-  const { annonces, loading, error, hasMore, totalCount, loadedCount, loadMore, refresh } = useAnnonces(filters, sort, itemsPerPage, {
+  const { annonces, loading, error, hasMore, loadedCount, loadMore, refresh } = useAnnonces(filters, sort, itemsPerPage, {
     ownerType: 'Particulier',
     departments: authorizedDepartments,
     requireDepartments: true,
@@ -38,6 +75,11 @@ const Pige: React.FC = () => {
     stagger: 0.045,
   });
   const resultsRef = useRef<HTMLDivElement | null>(null);
+  const [pendingScrollRestore, setPendingScrollRestore] = useState<PigeScrollState | null>(null);
+  const scopedDepartments = useMemo(
+    () => normalizeDepartmentCodes(authorizedDepartments),
+    [authorizedDepartments]
+  );
 
   const sortOptions = [
     { field: 'publication_date', direction: 'desc' as const, label: 'Plus récent' },
@@ -64,34 +106,39 @@ const Pige: React.FC = () => {
   );
 
   const metrics = useMemo(() => {
-    const urgent = annonces.filter((annonce) => annonce.urgence || annonce.urgence_detectee).length;
-    const withPhone = annonces.filter((annonce) => Boolean(annonce.phone)).length;
-    const withChanges = annonces.filter((annonce) => (annonce.nb_modifications || 0) > 0).length;
-
     return [
       {
         label: 'Urgentes à traiter',
-        value: urgent,
+        value: overviewCounts.urgent,
         helper: 'Priorités chaudes détectées',
         icon: Flame,
         accent: 'bg-primary-500 text-secondary-950',
       },
       {
         label: 'Avec numéro',
-        value: withPhone,
+        value: overviewCounts.withPhone,
         helper: 'Contacts exploitables maintenant',
         icon: Target,
         accent: 'bg-secondary-900 text-white',
       },
       {
         label: 'Avec signaux',
-        value: withChanges,
-        helper: 'Biens avec modifications ou mouvement',
+        value: overviewCounts.withSignals,
+        helper:
+          overviewSignalMode === 'price-and-movement'
+            ? 'Biens avec baisse de prix ou mouvement'
+            : 'Biens avec baisse de prix detectee',
         icon: TrendingUp,
         accent: 'bg-white text-secondary-900',
       },
     ];
-  }, [annonces]);
+  }, [overviewCounts, overviewSignalMode]);
+
+  const resultsCounterLabel = isOverviewLoading
+    ? `${loadedCount} / ... annonces`
+    : totalAvailableError || totalAvailable === null
+      ? `${loadedCount} chargée${loadedCount > 1 ? 's' : ''}`
+      : `${loadedCount} / ${totalAvailable} annonce${totalAvailable > 1 ? 's' : ''}`;
 
   const quickFilters = [
     {
@@ -169,6 +216,164 @@ const Pige: React.FC = () => {
     { dependencies: [viewMode, annonces.length, loading], scope: resultsRef, revertOnUpdate: true }
   );
 
+  useEffect(() => {
+    const scrollState = readPigeScrollState();
+    if (scrollState?.restorePending) {
+      setPendingScrollRestore(scrollState);
+    }
+  }, []);
+
+  const fetchPigeOverviewData = useCallback(async () => {
+    if (!appUser || scopedDepartments.length === 0) {
+      setOverviewCounts(defaultOverviewCounts);
+      setTotalAvailable(null);
+      setOverviewCountsError(null);
+      setTotalAvailableError(null);
+      setOverviewSignalMode('price-and-movement');
+      setAvailableSources([]);
+      return;
+    }
+
+    setIsOverviewLoading(true);
+    setOverviewCountsError(null);
+    setTotalAvailableError(null);
+
+    const departmentFilters = buildDepartmentScopeFilter(scopedDepartments);
+
+    try {
+      let totalQuery = supabase
+        .from('annonces')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_type', 'Particulier')
+        .eq('supprimee', false)
+        .neq('en_ligne', false);
+
+      if (departmentFilters.length > 0) {
+        totalQuery = totalQuery.or(departmentFilters.join(','));
+      }
+
+      const pageSize = 1000;
+      let from = 0;
+      let hasMorePages = true;
+      let signalMode: OverviewSignalMode = 'price-and-movement';
+      const rows: Array<{
+        id: string;
+        urgence?: boolean | null;
+        urgence_detectee?: boolean | null;
+        phone?: string | null;
+        nb_modifications?: number | null;
+        maj_prix?: boolean | null;
+        source?: string | null;
+      }> = [];
+
+      while (hasMorePages) {
+        let dataQuery = supabase
+          .from('annonces')
+          .select('id, urgence, urgence_detectee, phone, nb_modifications, maj_prix, source')
+          .eq('owner_type', 'Particulier')
+          .eq('supprimee', false)
+          .neq('en_ligne', false)
+          .range(from, from + pageSize - 1);
+
+        if (departmentFilters.length > 0) {
+          dataQuery = dataQuery.or(departmentFilters.join(','));
+        }
+
+        let dataResult = await dataQuery;
+        if (dataResult.error && isMissingModificationColumnError(dataResult.error)) {
+          signalMode = 'price-only';
+
+          let fallbackQuery = supabase
+            .from('annonces')
+            .select('id, urgence, urgence_detectee, phone, maj_prix, source')
+            .eq('owner_type', 'Particulier')
+            .eq('supprimee', false)
+            .neq('en_ligne', false)
+            .range(from, from + pageSize - 1);
+
+          if (departmentFilters.length > 0) {
+            fallbackQuery = fallbackQuery.or(departmentFilters.join(','));
+          }
+
+          dataResult = await fallbackQuery;
+        }
+
+        if (dataResult.error) throw dataResult.error;
+
+        const pageRows = dataResult.data || [];
+        rows.push(...pageRows);
+        hasMorePages = pageRows.length === pageSize;
+        from += pageSize;
+      }
+
+      const totalResult = await totalQuery;
+      if (totalResult.error) {
+        console.error('[pige] total count failed', totalResult.error);
+        setTotalAvailable(null);
+        setTotalAvailableError(totalResult.error.message || 'count_failed');
+      } else {
+        setTotalAvailable(totalResult.count || 0);
+      }
+
+      setOverviewSignalMode(signalMode);
+      setOverviewCounts({
+        urgent: rows.filter((item) => item.urgence || item.urgence_detectee).length,
+        withPhone: rows.filter((item) => Boolean(item.phone && item.phone.trim())).length,
+        withSignals: rows.filter((item) => (item.nb_modifications || 0) > 0 || item.maj_prix).length,
+      });
+
+      if (signalMode === 'price-only') {
+        setOverviewCountsError("Les mouvements d'annonce ne sont pas disponibles sur cette source pour le moment. Le KPI signaux est calcule a partir des baisses de prix.");
+      }
+
+      try {
+        let sourcesQuery = supabase
+          .from('annonces')
+          .select('source')
+          .eq('owner_type', 'Particulier')
+          .eq('supprimee', false)
+          .neq('en_ligne', false)
+          .not('source', 'is', null)
+          .order('source', { ascending: true })
+          .limit(200);
+
+        if (departmentFilters.length > 0) {
+          sourcesQuery = sourcesQuery.or(departmentFilters.join(','));
+        }
+
+        const sourcesResult = await sourcesQuery;
+        if (sourcesResult.error) throw sourcesResult.error;
+
+        setAvailableSources(
+          Array.from(
+            new Set(
+              (sourcesResult.data || [])
+                .map((item) => item.source?.trim())
+                .filter((source): source is string => Boolean(source))
+            )
+          ).sort((a, b) => a.localeCompare(b, 'fr'))
+        );
+      } catch (sourceError) {
+        console.error('[pige] source list failed', sourceError);
+        setAvailableSources([]);
+      }
+    } catch (error) {
+      console.error('[pige] overview fetch failed', error);
+      setOverviewCounts(defaultOverviewCounts);
+      setTotalAvailable(null);
+      setOverviewSignalMode('price-and-movement');
+      setOverviewCountsError(error instanceof Error ? error.message : 'overview_failed');
+      setTotalAvailableError(error instanceof Error ? error.message : 'overview_failed');
+      setAvailableSources([]);
+    } finally {
+      setIsOverviewLoading(false);
+    }
+  }, [appUser, scopedDepartments]);
+
+  useEffect(() => {
+    void fetchPigeOverviewData();
+  }, [fetchPigeOverviewData]);
+
   const handleClearFilters = () => {
     setFilters({});
   };
@@ -181,17 +386,42 @@ const Pige: React.FC = () => {
 
   useEffect(() => {
     const handleScroll = () => {
-      if (
-        window.innerHeight + document.documentElement.scrollTop >=
-        document.documentElement.offsetHeight - 1000
-      ) {
+      const scrollContainer = getAppScrollContainer();
+      const scrollTop = scrollContainer?.scrollTop ?? document.documentElement.scrollTop;
+      const clientHeight = scrollContainer?.clientHeight ?? window.innerHeight;
+      const scrollHeight = scrollContainer?.scrollHeight ?? document.documentElement.offsetHeight;
+
+      if (scrollTop + clientHeight >= scrollHeight - 1000) {
         handleLoadMore();
       }
     };
 
+    const scrollContainer = getAppScrollContainer();
+    scrollContainer?.addEventListener('scroll', handleScroll);
     window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+
+    return () => {
+      scrollContainer?.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('scroll', handleScroll);
+    };
   }, [loading, hasMore]);
+
+  useEffect(() => {
+    if (!pendingScrollRestore || loading) return;
+
+    if (loadedCount < pendingScrollRestore.loadedCount && hasMore) {
+      loadMore();
+      return;
+    }
+
+    const restoreFrame = window.requestAnimationFrame(() => {
+      scrollAppTo(pendingScrollRestore.scrollTop);
+      clearPigeScrollState();
+      setPendingScrollRestore(null);
+    });
+
+    return () => window.cancelAnimationFrame(restoreFrame);
+  }, [pendingScrollRestore, loading, loadedCount, hasMore, loadMore]);
 
   return (
     <div ref={pigeRef} className="space-y-6">
@@ -274,13 +504,11 @@ const Pige: React.FC = () => {
             <div className="mt-2 flex flex-wrap items-center gap-3">
               <h2 className="text-2xl font-bold text-secondary-900">Pige immobilière</h2>
               <span className="rounded-full bg-secondary-100 px-3 py-1 text-sm font-medium text-secondary-700">
-                {totalCount} annonce{totalCount > 1 ? 's' : ''}
+                {resultsCounterLabel}
               </span>
-              {loadedCount > 0 && loadedCount < totalCount && (
-                <span className="text-sm font-medium text-secondary-500">
-                  {loadedCount} affichee{loadedCount > 1 ? 's' : ''} sur {totalCount}
-                </span>
-              )}
+              <span className="text-sm font-medium text-secondary-500">
+                Chargées sur le total disponible en ligne dans vos départements
+              </span>
               {activeFiltersCount > 0 && (
                 <span className="rounded-full bg-primary-50 px-3 py-1 text-sm font-medium text-primary-700">
                   {activeFiltersCount} filtre{activeFiltersCount > 1 ? 's' : ''} actif
@@ -347,6 +575,7 @@ const Pige: React.FC = () => {
         filters={filters}
         onFiltersChange={setFilters}
         onClearFilters={handleClearFilters}
+        availableSources={availableSources}
       />
 
       {error && (
@@ -388,6 +617,7 @@ const Pige: React.FC = () => {
                 annonce={annonce}
                 variant={viewMode}
                 onStatusChange={() => {}}
+                listLoadedCount={loadedCount}
               />
             ))}
           </div>
