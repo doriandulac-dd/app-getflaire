@@ -497,6 +497,11 @@ const SettingsPage: React.FC = () => {
 
   const renderPreferencesTab = () => {
     const currentItemsPerPage = appUser?.personalization_settings?.items_per_page || 20;
+    const currentNotificationSettings = {
+      notifications_email: appUser?.personalization_settings?.notifications_email ?? true,
+      notifications_push: appUser?.personalization_settings?.notifications_push ?? false,
+      notifications_new_listings: appUser?.personalization_settings?.notifications_new_listings ?? false,
+    };
 
     const handleItemsPerPageChange = async (value: string) => {
       const numValue = parseInt(value, 10);
@@ -505,21 +510,50 @@ const SettingsPage: React.FC = () => {
       toast.success('Préférence sauvegardée');
     };
 
+    const handleNotificationPreferenceChange = async (
+      key: keyof typeof currentNotificationSettings,
+      checked: boolean
+    ) => {
+      try {
+        const { error } = await updatePersonalizationSettings({ [key]: checked });
+        if (error) throw error;
+        await refreshAppUser(appUser?.id);
+        toast.success('Préférence sauvegardée');
+      } catch (err: unknown) {
+        toast.error(getErrorMessage(err, 'Erreur lors de la sauvegarde'));
+      }
+    };
+
     return (
       <div className="space-y-6">
         <div>
           <h2 className="text-lg font-semibold text-secondary-900 mb-4">Notifications</h2>
           <div className="space-y-4">
             <label className="flex items-center">
-              <input type="checkbox" className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded" />
+              <input
+                type="checkbox"
+                checked={currentNotificationSettings.notifications_email}
+                onChange={(event) => handleNotificationPreferenceChange('notifications_email', event.target.checked)}
+                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              />
               <span className="ml-3 text-sm text-secondary-700">Recevoir des notifications par email</span>
             </label>
             <label className="flex items-center">
-              <input type="checkbox" className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded" />
+              <input
+                type="checkbox"
+                checked={currentNotificationSettings.notifications_push}
+                onChange={(event) => handleNotificationPreferenceChange('notifications_push', event.target.checked)}
+                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              />
               <span className="ml-3 text-sm text-secondary-700">Recevoir des notifications push</span>
             </label>
             <label className="flex items-center">
-              <input type="checkbox" className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded" />
+              <input
+                type="checkbox"
+                checked={currentNotificationSettings.notifications_new_listings}
+                onChange={(event) => handleNotificationPreferenceChange('notifications_new_listings', event.target.checked)}
+                className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+              />
               <span className="ml-3 text-sm text-secondary-700">Notifications de nouvelles annonces</span>
             </label>
           </div>

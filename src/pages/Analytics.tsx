@@ -203,9 +203,9 @@ const Analytics: React.FC = () => {
                     key={option.value}
                     type="button"
                     onClick={() => handlePeriodChange(option.value)}
-                    className={`rounded-2xl px-3 py-3 text-sm font-black ring-1 transition ${
+                    className={`rounded-2xl px-3 py-3 text-sm font-black ring-1 transition focus:outline-none focus:ring-4 focus:ring-primary-100 ${
                       selected
-                        ? 'bg-secondary-950 text-white ring-secondary-950'
+                        ? 'bg-primary-50 text-secondary-950 ring-primary-200 shadow-sm shadow-primary-500/10'
                         : 'bg-secondary-50 text-secondary-700 ring-secondary-100 hover:bg-secondary-100'
                     }`}
                   >

@@ -25,6 +25,9 @@ export interface PersonalizationSettings {
   primaryColor?: ThemeName; // couleur principale
   theme?: ThemeName | ColorMode; // legacy: anciennes données stockées
   items_per_page?: number; // nombre d'annonces par page
+  notifications_email?: boolean;
+  notifications_push?: boolean;
+  notifications_new_listings?: boolean;
   commercial_profile?: CommercialProfileSettings;
 }
 

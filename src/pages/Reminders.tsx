@@ -266,17 +266,17 @@ const Reminders: React.FC = () => {
                   key={item.type}
                   type="button"
                   onClick={() => setFilters({ ...filters, type: selected ? undefined : item.type })}
-                  className={`rounded-3xl border p-4 text-left transition ${
+                  className={`rounded-3xl border p-4 text-left transition focus:outline-none focus:ring-4 focus:ring-primary-100 ${
                     selected
-                      ? 'border-secondary-950 bg-secondary-950 text-white shadow-xl shadow-secondary-900/15'
+                      ? 'border-primary-200 bg-primary-50 text-secondary-950 shadow-lg shadow-primary-500/10'
                       : 'border-secondary-100 bg-secondary-50/80 text-secondary-700 hover:border-primary-200 hover:bg-white'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className={`rounded-2xl p-2.5 ${selected ? 'bg-white/10 text-white' : 'bg-white text-primary-600'}`}>
+                    <span className={`rounded-2xl p-2.5 ${selected ? 'bg-primary-600 text-white' : 'bg-white text-primary-600'}`}>
                       <Icon className="h-4 w-4" />
                     </span>
-                    <span className={`text-2xl font-black ${selected ? 'text-white' : 'text-secondary-950'}`}>
+                    <span className="text-2xl font-black text-secondary-950">
                       {pipelineCounts[item.type]}
                     </span>
                   </div>

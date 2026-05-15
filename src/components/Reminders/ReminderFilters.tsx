@@ -18,9 +18,27 @@ const typeOptions = [
 ] as const;
 
 const statusOptions = [
-  { value: 'pending', label: 'À faire' },
-  { value: 'completed', label: 'Terminé' },
-  { value: 'overdue', label: 'En retard' },
+  {
+    value: 'pending',
+    label: 'À faire',
+    activeClass: 'bg-amber-600 text-white ring-amber-600',
+    idleClass: 'bg-amber-50 text-amber-800 ring-amber-200 hover:bg-amber-100',
+    focusClass: 'focus:ring-amber-100',
+  },
+  {
+    value: 'completed',
+    label: 'Terminé',
+    activeClass: 'bg-emerald-600 text-white ring-emerald-600',
+    idleClass: 'bg-emerald-50 text-emerald-800 ring-emerald-200 hover:bg-emerald-100',
+    focusClass: 'focus:ring-emerald-100',
+  },
+  {
+    value: 'overdue',
+    label: 'En retard',
+    activeClass: 'bg-red-600 text-white ring-red-600',
+    idleClass: 'bg-red-50 text-red-800 ring-red-200 hover:bg-red-100',
+    focusClass: 'focus:ring-red-100',
+  },
 ] as const;
 
 const periodOptions = [
@@ -114,13 +132,13 @@ const ReminderFiltersComponent: React.FC<ReminderFiltersProps> = ({
                   key={option.value}
                   type="button"
                   onClick={() => handleFilterChange('type', selected ? undefined : option.value)}
-                  className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-bold ring-1 transition ${
+                  className={`inline-flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-sm font-bold ring-1 transition focus:outline-none focus:ring-4 focus:ring-primary-100 ${
                     selected
-                      ? 'bg-secondary-950 text-white ring-secondary-950'
+                      ? 'bg-primary-50 text-secondary-950 ring-primary-200'
                       : 'bg-secondary-50 text-secondary-600 ring-secondary-100 hover:bg-secondary-100'
                   }`}
                 >
-                  <Icon className="h-4 w-4" />
+                  <Icon className={`h-4 w-4 ${selected ? 'text-primary-600' : ''}`} />
                   {option.label}
                 </button>
               );
@@ -139,10 +157,10 @@ const ReminderFiltersComponent: React.FC<ReminderFiltersProps> = ({
                     key={option.value}
                     type="button"
                     onClick={() => handleFilterChange('status', selected ? undefined : option.value)}
-                    className={`rounded-full px-3 py-2 text-sm font-bold ring-1 transition ${
+                    className={`rounded-full px-3 py-2 text-sm font-bold ring-1 transition focus:outline-none focus:ring-4 ${option.focusClass} ${
                       selected
-                        ? 'bg-primary-600 text-white ring-primary-600'
-                        : 'bg-primary-50 text-primary-700 ring-primary-100 hover:bg-primary-100'
+                        ? option.activeClass
+                        : option.idleClass
                     }`}
                   >
                     {option.label}

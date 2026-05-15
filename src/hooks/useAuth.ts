@@ -63,6 +63,9 @@ const normalizePersonalization = (raw: unknown): PersonalizationSettings | undef
     mode: settings.mode ?? (settings.theme === 'dark' || settings.theme === 'system' ? settings.theme : 'light'),
     primaryColor: settings.primaryColor ?? (settings.theme === 'blue' || settings.theme === 'green' || settings.theme === 'purple' || settings.theme === 'orange' ? settings.theme : 'orange'),
     items_per_page: settings.items_per_page,
+    notifications_email: settings.notifications_email,
+    notifications_push: settings.notifications_push,
+    notifications_new_listings: settings.notifications_new_listings,
     commercial_profile: commercialProfile
       ? {
           tone: commercialProfile.tone,
