@@ -56,6 +56,7 @@ export const useReminders = (filters: ReminderFilters = {}) => {
             postal_code,
             type_de_bien,
             url,
+            image_url,
             image_urls
           )
         `)
@@ -119,6 +120,7 @@ export const useReminders = (filters: ReminderFilters = {}) => {
               postal_code,
               type_de_bien,
               url,
+              image_url,
               image_urls
             )
           `)
@@ -163,6 +165,7 @@ export const useReminders = (filters: ReminderFilters = {}) => {
             city: item.annonces?.city || '',
             price: item.annonces?.price || 0,
             type_de_bien: item.annonces?.type_de_bien || '',
+            image_url: item.annonces?.image_url,
             image_urls: item.annonces?.image_urls,
           };
           return reminder;

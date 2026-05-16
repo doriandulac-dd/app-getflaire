@@ -268,32 +268,98 @@ const PropertyActions: React.FC<PropertyActionsProps> = ({
 
     setLoading(true);
     try {
+      const noteContent = comment.trim();
+      let savedNote: PropertyNoteRow | null = null;
+
       if (editingNoteId) {
-        await updatePropertyNote({
+        const result = await updatePropertyNote({
           noteId: editingNoteId,
           annonceId,
           userId: appUser.id,
           activityScope,
-          content: comment,
+          content: noteContent,
         });
+        savedNote = normalizeSavedNote(result, noteContent);
       } else {
-        await savePropertyNote({
+        const result = await savePropertyNote({
           annonceId,
           userId: appUser.id,
           activityScope,
-          content: comment,
+          content: noteContent,
         });
+        savedNote = normalizeSavedNote(result, noteContent);
       }
       setComment('');
       setEditingNoteId(null);
+      if (savedNote) {
+        setNotes(prev => upsertNote(prev, savedNote));
+      }
       await fetchCurrentActivity();
+      if (savedNote) {
+        setNotes(prev => upsertNote(prev, savedNote));
+      }
       toast.success(editingNoteId ? 'Note mise à jour' : 'Note ajoutée');
     } catch (error) {
-      console.error('[pige-activity] note save failed', error);
-      toast.error(editingNoteId ? 'Erreur lors de la mise à jour de la note' : 'Erreur lors de l’ajout de la note');
+      console.error('[pige-activity] note save failed', getSupabaseErrorDetails(error), error);
+      const message = getSupabaseErrorMessage(error);
+      toast.error(message || (editingNoteId ? 'Erreur lors de la mise à jour de la note' : 'Erreur lors de l’ajout de la note'));
     } finally {
       setLoading(false);
     }
+  };
+
+  const getSupabaseErrorMessage = (error: unknown) => {
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') {
+      return error.message;
+    }
+    return null;
+  };
+
+  const getSupabaseErrorDetails = (error: unknown) => {
+    if (!error || typeof error !== 'object') return error;
+
+    const supabaseError = error as {
+      code?: string;
+      message?: string;
+      details?: string;
+      hint?: string;
+    };
+
+    return {
+      code: supabaseError.code,
+      message: supabaseError.message,
+      details: supabaseError.details,
+      hint: supabaseError.hint,
+    };
+  };
+
+  const normalizeSavedNote = (
+    result: PropertyNoteRow | { id: string; annonce_id: string; user_id: string; agency_id?: string | null; note?: string | null; date_suivi?: string | null } | null,
+    fallbackContent: string
+  ): PropertyNoteRow | null => {
+    if (!result?.id) return null;
+
+    if ('content' in result) {
+      return result;
+    }
+
+    return {
+      id: result.id,
+      annonce_id: result.annonce_id,
+      user_id: result.user_id,
+      agency_id: result.agency_id,
+      content: result.note || fallbackContent,
+      created_at: result.date_suivi || new Date().toISOString(),
+      updated_at: result.date_suivi || new Date().toISOString(),
+    };
+  };
+
+  const upsertNote = (currentNotes: PropertyNoteRow[], note: PropertyNoteRow) => {
+    const nextNotes = currentNotes.filter(item => item.id !== note.id);
+    return [note, ...nextNotes].sort(
+      (a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+    );
   };
 
   const handleEditNote = (note: PropertyNoteRow) => {

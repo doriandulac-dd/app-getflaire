@@ -72,12 +72,22 @@ const isMissingActivityTableError = (error: { code?: string; message?: string })
   const message = error.message || '';
   return (
     error.code === '42P01' ||
-    error.code === '42703' ||
     message.includes('pige_actions') ||
+    message.includes('Could not find the table')
+  );
+};
+
+const isMissingNotesTableError = (error: { code?: string; message?: string }) => {
+  const message = error.message || '';
+  return (
+    error.code === '42P01' ||
     message.includes('pige_notes') ||
     message.includes('Could not find the table')
   );
 };
+
+const isMissingAgencyColumnError = (error: { code?: string; message?: string }) =>
+  error.code === '42703' || (error.message || '').includes('agency_id does not exist');
 
 const applyActivityScope = (
   query: any,
@@ -100,6 +110,20 @@ const applyActivityScope = (
     : userQuery.is('agency_id', null);
 };
 
+const applyUserActivityScope = (
+  query: any,
+  { annonceId, userId, activityScope }: ActivityScopeParams,
+  ownOnly = false
+) => {
+  const scopedQuery = query.eq('annonce_id', annonceId);
+
+  if (!ownOnly && activityScope.userIds.length > 0) {
+    return scopedQuery.in('user_id', activityScope.userIds);
+  }
+
+  return scopedQuery.eq('user_id', userId);
+};
+
 const legacyToActivity = (status: PropertyStatusRow | null): PropertyActivityState => {
   const state: PropertyActivityState = {
     actions: [],
@@ -114,6 +138,18 @@ const legacyToActivity = (status: PropertyStatusRow | null): PropertyActivitySta
     statusActor: status?.user_id || null,
     latestNote: status?.note || undefined,
   };
+
+  if (status?.note) {
+    state.notes = [{
+      id: status.id,
+      annonce_id: status.annonce_id,
+      user_id: status.user_id,
+      agency_id: status.agency_id,
+      content: status.note,
+      created_at: status.date_suivi,
+      updated_at: status.date_suivi,
+    }];
+  }
 
   if (!status?.statut) return state;
 
@@ -148,18 +184,6 @@ const legacyToActivity = (status: PropertyStatusRow | null): PropertyActivitySta
     scheduled_at: status.date_suivi,
     note: status.note,
   }];
-
-  if (status.note) {
-    state.notes = [{
-      id: status.id,
-      annonce_id: status.annonce_id,
-      user_id: status.user_id,
-      agency_id: status.agency_id,
-      content: status.note,
-      created_at: status.date_suivi,
-      updated_at: status.date_suivi,
-    }];
-  }
 
   return state;
 };
@@ -201,9 +225,52 @@ const deriveActivityState = (actions: PropertyActionRow[], notes: PropertyNoteRo
   };
 };
 
+const fetchPigeNotes = async (params: ActivityScopeParams): Promise<PropertyNoteRow[]> => {
+  const notesResult = await applyActivityScope(
+    supabase
+      .from('pige_notes')
+      .select('*'),
+    params
+  ).order('created_at', { ascending: false });
+
+  if (!notesResult.error) {
+    return (notesResult.data || []) as PropertyNoteRow[];
+  }
+
+  if (isMissingAgencyColumnError(notesResult.error)) {
+    const retryNotesResult = await applyUserActivityScope(
+      supabase
+        .from('pige_notes')
+        .select('*'),
+      params
+    ).order('created_at', { ascending: false });
+
+    if (!retryNotesResult.error) {
+      return (retryNotesResult.data || []) as PropertyNoteRow[];
+    }
+
+    console.error('[pige-activity] fetch notes retry failed', JSON.stringify(retryNotesResult.error), retryNotesResult.error);
+    throw retryNotesResult.error;
+  }
+
+  if (isMissingNotesTableError(notesResult.error)) {
+    console.error('[pige-activity] pige_notes table unavailable', JSON.stringify(notesResult.error), notesResult.error);
+    throw notesResult.error;
+  }
+
+  console.error('[pige-activity] fetch notes failed', JSON.stringify(notesResult.error), notesResult.error);
+  throw notesResult.error;
+};
+
 export const fetchPropertyActivity = async (params: ActivityScopeParams): Promise<PropertyActivityState> => {
   if (supportsPigeActions === false) {
-    return legacyToActivity(await fetchPropertyStatus(params));
+    const legacyState = legacyToActivity(await fetchPropertyStatus(params));
+    const notes = await fetchPigeNotes(params).catch(() => legacyState.notes);
+    return {
+      ...legacyState,
+      notes: notes.length > 0 ? notes : legacyState.notes,
+      latestNote: notes[0]?.content || legacyState.latestNote,
+    };
   }
 
   const actionsQuery = applyActivityScope(
@@ -213,29 +280,31 @@ export const fetchPropertyActivity = async (params: ActivityScopeParams): Promis
     params
   ).order('updated_at', { ascending: false });
 
-  const notesQuery = applyActivityScope(
-    supabase
-      .from('pige_notes')
-      .select('*'),
-    params
-  ).order('created_at', { ascending: false });
+  const [actionsResult, notesResult] = await Promise.all([
+    actionsQuery,
+    fetchPigeNotes(params).then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
+  ]);
 
-  const [actionsResult, notesResult] = await Promise.all([actionsQuery, notesQuery]);
+  let actions = (actionsResult.data || []) as PropertyActionRow[];
+  let notes = (notesResult.data || []) as PropertyNoteRow[];
 
-  if (actionsResult.error || notesResult.error) {
-    const error = actionsResult.error || notesResult.error;
-    if (error && isMissingActivityTableError(error)) {
+  if (actionsResult.error) {
+    if (isMissingActivityTableError(actionsResult.error)) {
       supportsPigeActions = false;
-      return legacyToActivity(await fetchPropertyStatus(params));
+      const legacyState = legacyToActivity(await fetchPropertyStatus(params));
+      return {
+        ...legacyState,
+        notes: notes.length > 0 ? notes : legacyState.notes,
+        latestNote: notes[0]?.content || legacyState.latestNote,
+      };
     }
-    console.error('[pige-activity] fetch failed', JSON.stringify(error), error);
-    throw error;
+    console.error('[pige-activity] fetch actions failed', JSON.stringify(actionsResult.error), actionsResult.error);
+    throw actionsResult.error;
   }
 
-  return deriveActivityState(
-    (actionsResult.data || []) as PropertyActionRow[],
-    (notesResult.data || []) as PropertyNoteRow[]
-  );
+  if (notesResult.error) throw notesResult.error;
+
+  return deriveActivityState(actions, notes);
 };
 
 const findActiveAction = async (params: ActivityScopeParams & { actionType: PropertyActionType }) => {
@@ -346,16 +415,6 @@ export const savePropertyNote = async ({
   const trimmed = content.trim();
   if (!trimmed) return null;
 
-  if (supportsPigeActions === false) {
-    return savePropertyStatus({
-      annonceId,
-      userId,
-      activityScope,
-      statut: null,
-      note: trimmed,
-    });
-  }
-
   const payload = {
     annonce_id: annonceId,
     user_id: userId,
@@ -373,9 +432,21 @@ export const savePropertyNote = async ({
     if (error) throw error;
     return data as PropertyNoteRow;
   } catch (error: any) {
-    if (isMissingActivityTableError(error)) {
-      supportsPigeActions = false;
-      return savePropertyNote({ annonceId, userId, activityScope, content });
+    if (isMissingAgencyColumnError(error)) {
+      const { agency_id: _agencyId, ...compatiblePayload } = payload;
+      const { data, error: retryError } = await supabase
+        .from('pige_notes')
+        .insert(compatiblePayload)
+        .select('*')
+        .maybeSingle();
+
+      if (retryError) throw retryError;
+      return data as PropertyNoteRow;
+    }
+
+    if (isMissingNotesTableError(error)) {
+      console.error('[pige-activity] pige_notes table unavailable for note save', JSON.stringify(error), error);
+      throw error;
     }
     console.error('[pige-activity] save note failed', JSON.stringify(error), error);
     throw error;
@@ -391,16 +462,6 @@ export const updatePropertyNote = async ({
 }: ActivityScopeParams & { noteId: string; content: string }) => {
   const trimmed = content.trim();
   if (!trimmed) return null;
-
-  if (supportsPigeActions === false) {
-    return savePropertyStatus({
-      annonceId,
-      userId,
-      activityScope,
-      statut: null,
-      note: trimmed,
-    });
-  }
 
   try {
     const { data, error } = await supabase
@@ -418,9 +479,25 @@ export const updatePropertyNote = async ({
     if (error) throw error;
     return data as PropertyNoteRow;
   } catch (error: any) {
-    if (isMissingActivityTableError(error)) {
-      supportsPigeActions = false;
-      return updatePropertyNote({ noteId, annonceId, userId, activityScope, content });
+    if (isMissingAgencyColumnError(error)) {
+      const { data, error: retryError } = await supabase
+        .from('pige_notes')
+        .update({
+          content: trimmed,
+          user_id: userId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', noteId)
+        .select('*')
+        .maybeSingle();
+
+      if (retryError) throw retryError;
+      return data as PropertyNoteRow;
+    }
+
+    if (isMissingNotesTableError(error)) {
+      console.error('[pige-activity] pige_notes table unavailable for note update', JSON.stringify(error), error);
+      throw error;
     }
     console.error('[pige-activity] update note failed', JSON.stringify(error), error);
     throw error;
@@ -433,16 +510,6 @@ export const deletePropertyNote = async ({
   userId,
   activityScope,
 }: ActivityScopeParams & { noteId: string }) => {
-  if (supportsPigeActions === false) {
-    return savePropertyStatus({
-      annonceId,
-      userId,
-      activityScope,
-      statut: null,
-      note: '',
-    });
-  }
-
   try {
     const { error } = await supabase
       .from('pige_notes')
@@ -452,9 +519,9 @@ export const deletePropertyNote = async ({
     if (error) throw error;
     return true;
   } catch (error: any) {
-    if (isMissingActivityTableError(error)) {
-      supportsPigeActions = false;
-      return deletePropertyNote({ noteId, annonceId, userId, activityScope });
+    if (isMissingNotesTableError(error)) {
+      console.error('[pige-activity] pige_notes table unavailable for note delete', JSON.stringify(error), error);
+      throw error;
     }
     console.error('[pige-activity] delete note failed', JSON.stringify(error), error);
     throw error;

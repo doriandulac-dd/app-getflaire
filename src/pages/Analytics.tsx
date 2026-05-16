@@ -157,29 +157,29 @@ const Analytics: React.FC = () => {
     <div ref={pageRef} className="space-y-6">
       <section
         data-analytics-intro
-        className="relative overflow-hidden rounded-[2rem] border border-primary-100 bg-gradient-to-br from-white via-orange-50 to-blue-50 p-6 text-secondary-950 shadow-2xl shadow-secondary-900/10 ring-1 ring-white/80 lg:p-8"
+        className="relative overflow-hidden rounded-[2rem] bg-secondary-900 p-6 text-white shadow-2xl shadow-secondary-900/25 lg:p-8"
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,183,77,0.22),transparent_34%),radial-gradient(circle_at_82%_8%,rgba(29,78,216,0.14),transparent_34%)]" />
-        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-blue-200/50 bg-white/45 blur-sm" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(255,178,63,0.35),transparent_26rem),radial-gradient(circle_at_82%_18%,rgba(59,130,246,0.18),transparent_24rem)]" />
+        <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-primary-300/80 to-transparent" />
 
         <div className="relative z-10 grid gap-6 xl:grid-cols-[1fr_440px] xl:items-end">
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/85 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-primary-700 shadow-sm">
-              <Sparkles className="h-3.5 w-3.5" />
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-black/10 backdrop-blur">
+              <Sparkles className="h-3.5 w-3.5 text-primary-300" />
               Cockpit business
             </div>
-            <h1 className="max-w-4xl text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+            <h1 className="max-w-4xl text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
               Analytics GetFlaire pour piloter la performance commerciale.
             </h1>
-            <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-secondary-600 sm:text-base">
+            <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-white/70 sm:text-base">
               Suivez le volume d'annonces, les appels, la conversion, les relances et la surveillance depuis une vue {activityScope.isAgencyScope ? 'agence' : 'personnelle'} plus claire et décisionnelle.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-white bg-white/85 p-4 shadow-xl shadow-secondary-900/10 backdrop-blur">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-secondary-500">Lecture active</p>
-            <p className="mt-2 text-2xl font-black text-secondary-950">{periodLabel}</p>
-            <p className="mt-2 text-sm font-semibold text-secondary-600">
+          <div className="rounded-3xl border border-white/15 bg-white/10 p-4 shadow-2xl shadow-black/10 backdrop-blur">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-primary-200">Lecture active</p>
+            <p className="mt-2 text-2xl font-black text-white">{periodLabel}</p>
+            <p className="mt-2 text-sm font-semibold text-white/70">
               {filters.city ? `Ville filtrée : ${filters.city}` : 'Toutes les villes'} · données {activityScope.isAgencyScope ? 'agence' : 'personnelles'} en temps réel
             </p>
           </div>

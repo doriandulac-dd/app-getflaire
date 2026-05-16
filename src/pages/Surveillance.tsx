@@ -188,20 +188,20 @@ const Surveillance: React.FC = () => {
     <div ref={pageRef} className="space-y-6">
       <section
         data-surveillance-intro
-        className="relative overflow-hidden rounded-[2rem] border border-primary-100 bg-gradient-to-br from-white via-orange-50 to-blue-50 p-6 text-secondary-950 shadow-2xl shadow-secondary-900/10 ring-1 ring-white/80 lg:p-8"
+        className="relative overflow-hidden rounded-[2rem] bg-secondary-900 p-6 text-white shadow-2xl shadow-secondary-900/25 lg:p-8"
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,183,77,0.22),transparent_34%),radial-gradient(circle_at_80%_20%,rgba(29,78,216,0.14),transparent_30%)]" />
-        <div className="absolute -right-16 -top-20 h-56 w-56 rounded-full border border-blue-200/50 bg-white/45 blur-sm" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(255,178,63,0.35),transparent_26rem),radial-gradient(circle_at_82%_18%,rgba(59,130,246,0.18),transparent_24rem)]" />
+        <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-primary-300/80 to-transparent" />
         <div className="relative z-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/85 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-primary-700 shadow-sm">
-              <ShieldCheck className="h-3.5 w-3.5" />
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-black/10 backdrop-blur">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary-300" />
               Watchlist active
             </div>
-            <h1 className="text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+            <h1 className="text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
               Surveillance immobilière, pensée pour agir avant les autres.
             </h1>
-            <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-secondary-600 sm:text-base">
+            <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-white/70 sm:text-base">
               Repérez les annonces qui bougent, ouvrez l'historique, et ajoutez de nouveaux biens au suivi sans casser votre rythme commercial.
             </p>
           </div>
@@ -210,7 +210,7 @@ const Surveillance: React.FC = () => {
             <button
               type="button"
               onClick={() => setShowSettings(true)}
-              className="inline-flex items-center justify-center rounded-2xl border border-secondary-200 bg-white/85 px-4 py-3 text-sm font-bold text-secondary-800 shadow-lg shadow-secondary-900/10 backdrop-blur transition hover:bg-white"
+              className="inline-flex items-center justify-center rounded-2xl border border-white/15 bg-white/10 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-black/10 backdrop-blur transition hover:bg-white/15"
             >
               <Settings className="mr-2 h-4 w-4" />
               Paramètres
@@ -218,7 +218,7 @@ const Surveillance: React.FC = () => {
             <button
               type="button"
               onClick={() => setActiveTab('recherche_stock')}
-              className="inline-flex items-center justify-center rounded-2xl bg-primary-500 px-4 py-3 text-sm font-bold text-white shadow-xl shadow-primary-900/30 transition hover:bg-primary-600"
+              className="inline-flex items-center justify-center rounded-2xl bg-primary-500 px-4 py-3 text-sm font-bold text-secondary-950 shadow-xl shadow-primary-500/20 transition hover:bg-primary-400"
             >
               <Plus className="mr-2 h-4 w-4" />
               Ajouter une annonce

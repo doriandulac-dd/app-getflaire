@@ -19,6 +19,13 @@ const typeOptions = [
 
 const statusOptions = [
   {
+    value: 'overdue',
+    label: 'En retard',
+    activeClass: 'bg-red-600 text-white ring-red-600',
+    idleClass: 'bg-red-50 text-red-800 ring-red-200 hover:bg-red-100',
+    focusClass: 'focus:ring-red-100',
+  },
+  {
     value: 'pending',
     label: 'À faire',
     activeClass: 'bg-amber-600 text-white ring-amber-600',
@@ -31,13 +38,6 @@ const statusOptions = [
     activeClass: 'bg-emerald-600 text-white ring-emerald-600',
     idleClass: 'bg-emerald-50 text-emerald-800 ring-emerald-200 hover:bg-emerald-100',
     focusClass: 'focus:ring-emerald-100',
-  },
-  {
-    value: 'overdue',
-    label: 'En retard',
-    activeClass: 'bg-red-600 text-white ring-red-600',
-    idleClass: 'bg-red-50 text-red-800 ring-red-200 hover:bg-red-100',
-    focusClass: 'focus:ring-red-100',
   },
 ] as const;
 

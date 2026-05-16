@@ -14,6 +14,7 @@ export interface ReminderFromSuivi {
     postal_code: string;
     type_de_bien: string;
     url: string;
+    image_url?: string[] | string | null;
     image_urls?: string[] | string | null;
   };
 }
@@ -50,5 +51,6 @@ export interface ProcessedReminder {
   city: string;
   price: number;
   type_de_bien: string;
+  image_url?: string[] | string | null;
   image_urls?: string[] | string | null;
 }

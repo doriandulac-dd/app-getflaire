@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -39,36 +39,46 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
       return trimmed.includes(',') ? trimmed.split(',')[0].trim() : trimmed;
     };
 
-    const value = reminder.image_urls;
-    if (!value) return null;
-
     const images: string[] = [];
 
-    if (Array.isArray(value)) {
-      value.forEach((item) => {
-        if (typeof item === 'string' && item.trim()) images.push(processSingleUrl(item));
-      });
-    } else if (typeof value === 'string') {
-      if (value.trim().startsWith('[') || value.trim().startsWith('{')) {
-        try {
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed)) {
-            parsed.forEach((item) => {
-              if (typeof item === 'string' && item.trim()) images.push(processSingleUrl(item));
-            });
-          } else if (typeof parsed === 'object' && parsed !== null && typeof parsed.url === 'string') {
-            images.push(processSingleUrl(parsed.url));
-          }
-        } catch {
-          if (value.trim()) images.push(processSingleUrl(value));
-        }
-      } else if (value.trim()) {
-        images.push(processSingleUrl(value));
+    const collectImages = (value?: string[] | string | null) => {
+      if (!value) return;
+
+      if (Array.isArray(value)) {
+        value.forEach((item) => {
+          if (typeof item === 'string' && item.trim()) images.push(processSingleUrl(item));
+        });
+        return;
       }
-    }
+
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return;
+
+        if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) {
+              parsed.forEach((item) => {
+                if (typeof item === 'string' && item.trim()) images.push(processSingleUrl(item));
+              });
+            } else if (typeof parsed === 'object' && parsed !== null && typeof parsed.url === 'string') {
+              images.push(processSingleUrl(parsed.url));
+            }
+          } catch {
+            images.push(processSingleUrl(trimmed));
+          }
+        } else {
+          images.push(processSingleUrl(trimmed));
+        }
+      }
+    };
+
+    collectImages(reminder.image_url);
+    collectImages(reminder.image_urls);
 
     return images.find((item) => item.startsWith('http')) || null;
-  }, [reminder.image_urls]);
+  }, [reminder.image_url, reminder.image_urls]);
 
   const typeConfig = useMemo(() => {
     switch (reminder.type) {
@@ -104,8 +114,6 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
       return { label: 'Date non renseignée', relative: '' };
     }
 
-    const now = new Date();
-    const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     const label = new Intl.DateTimeFormat('fr-FR', {
       day: 'numeric',
       month: 'short',
@@ -114,12 +122,18 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
       minute: '2-digit',
     }).format(date);
 
+    if (reminder.status === 'completed') {
+      return { label, relative: 'Action terminée' };
+    }
+
+    const now = new Date();
+    const diffDays = Math.ceil((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
     let relative = "Aujourd'hui";
     if (diffDays < 0) relative = `En retard de ${Math.abs(diffDays)} jour${Math.abs(diffDays) > 1 ? 's' : ''}`;
     if (diffDays > 0) relative = `Dans ${diffDays} jour${diffDays > 1 ? 's' : ''}`;
 
     return { label, relative };
-  }, [reminder.scheduled_date]);
+  }, [reminder.scheduled_date, reminder.status]);
 
   const formatPrice = (price: number) => {
     if (!price) return '';
@@ -131,6 +145,10 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
   };
 
   const TypeIcon = typeConfig.icon;
+
+  useEffect(() => {
+    setImageError(false);
+  }, [imageUrl]);
 
   const handleMarkCompleted = async () => {
     setLoading(true);
@@ -148,32 +166,52 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
 
   return (
     <article className="group overflow-hidden rounded-3xl border border-white bg-white shadow-sm ring-1 ring-secondary-100 transition duration-300 hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-secondary-900/10">
-      <div className="grid gap-0 lg:grid-cols-[260px_1fr]">
+      <div className="grid gap-0 lg:grid-cols-[300px_1fr]">
         <button
           type="button"
           onClick={() => navigate(`/pige/${reminder.annonce_id}`)}
-          className="relative min-h-56 overflow-hidden bg-secondary-100 text-left lg:min-h-full"
+          className="relative min-h-64 overflow-hidden bg-secondary-950 text-left lg:min-h-full"
         >
           {imageUrl && !imageError ? (
             <img
               src={imageUrl}
               alt={reminder.annonce_title || 'image annonce'}
-              className="h-full min-h-56 w-full object-cover transition duration-700 group-hover:scale-105"
+              className="h-full min-h-64 w-full object-cover transition duration-700 group-hover:scale-105"
               onError={() => setImageError(true)}
               loading="lazy"
             />
           ) : (
-            <div className="flex h-full min-h-56 w-full items-center justify-center bg-gradient-to-br from-secondary-100 to-secondary-200 text-sm font-bold text-secondary-400">
-              Pas d'image
+            <div className="flex h-full min-h-64 w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,rgba(255,183,77,0.35),transparent_34%),linear-gradient(135deg,#172033,#31415f)] text-sm font-bold text-white/75">
+              <div className="rounded-3xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur">
+                Pas d'image
+              </div>
             </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-secondary-950/75 via-secondary-950/10 to-transparent" />
+          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.15)_0%,rgba(15,23,42,0.05)_34%,rgba(15,23,42,0.88)_100%)]" />
+          <div className="absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-4">
+            <span className="rounded-full border border-white/25 bg-white/90 px-3 py-1 text-[0.68rem] font-black uppercase tracking-[0.14em] text-secondary-900 shadow-lg backdrop-blur">
+              Rappel
+            </span>
+            {formatPrice(reminder.price) && (
+              <span className="rounded-2xl bg-primary-600 px-3 py-1.5 text-sm font-black text-white shadow-lg shadow-primary-950/20">
+                {formatPrice(reminder.price)}
+              </span>
+            )}
+          </div>
           <div className="absolute bottom-4 left-4 right-4">
-            <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-black ring-1 ${typeConfig.className}`}>
+            <span className={`inline-flex items-center gap-1.5 rounded-full border border-white/30 bg-white/95 px-3 py-1 text-xs font-black shadow-lg ring-1 ${typeConfig.className}`}>
               <TypeIcon className="h-3.5 w-3.5" />
               {typeConfig.label}
             </span>
-            <p className="mt-3 line-clamp-2 text-lg font-black leading-tight text-white">{reminder.annonce_title}</p>
+            <p className="mt-3 line-clamp-2 text-xl font-black leading-tight text-white drop-shadow">
+              {reminder.annonce_title}
+            </p>
+            {reminder.city && (
+              <span className="mt-3 inline-flex items-center rounded-full border border-white/20 bg-white/15 px-3 py-1 text-xs font-bold text-white backdrop-blur">
+                <MapPin className="mr-1.5 h-3.5 w-3.5 text-primary-200" />
+                {reminder.city}
+              </span>
+            )}
           </div>
         </button>
 
@@ -225,7 +263,13 @@ const ReminderCard: React.FC<ReminderCardProps> = ({
                 <Calendar className="h-4 w-4 text-primary-500" />
                 {schedule.label}
               </div>
-              <p className={`mt-1 text-xs font-bold ${reminder.status === 'overdue' ? 'text-red-600' : 'text-secondary-500'}`}>
+              <p className={`mt-1 text-xs font-bold ${
+                reminder.status === 'overdue'
+                  ? 'text-red-600'
+                  : reminder.status === 'completed'
+                    ? 'text-emerald-700'
+                    : 'text-secondary-500'
+              }`}>
                 {schedule.relative}
               </p>
             </div>

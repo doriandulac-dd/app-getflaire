@@ -27,6 +27,12 @@ const reminderTypeLabels: Record<ProcessedReminder['type'], string> = {
   rdv: 'RDV',
 };
 
+const reminderStatusPriority: Record<ProcessedReminder['status'], number> = {
+  overdue: 0,
+  pending: 1,
+  completed: 2,
+};
+
 const Reminders: React.FC = () => {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const [filters, setFilters] = useState<ReminderFilters>({});
@@ -153,7 +159,17 @@ const Reminders: React.FC = () => {
 
   const activeFiltersCount = Object.values(filters).filter((value) => value !== undefined && value !== '').length;
 
-  const nextReminder = reminders
+  const timelineReminders = useMemo(() => {
+    return reminders
+      .filter((reminder) => filters.status === 'completed' || reminder.status !== 'completed')
+      .sort((a, b) => {
+        const priorityDiff = reminderStatusPriority[a.status] - reminderStatusPriority[b.status];
+        if (priorityDiff !== 0) return priorityDiff;
+        return new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime();
+      });
+  }, [reminders, filters.status]);
+
+  const nextReminder = timelineReminders
     .filter((reminder) => reminder.status !== 'completed')
     .sort((a, b) => new Date(a.scheduled_date).getTime() - new Date(b.scheduled_date).getTime())[0];
 
@@ -161,30 +177,30 @@ const Reminders: React.FC = () => {
     <div ref={pageRef} className="space-y-6">
       <section
         data-reminders-intro
-        className="relative overflow-hidden rounded-[2rem] border border-primary-100 bg-gradient-to-br from-white via-orange-50 to-blue-50 p-6 text-secondary-950 shadow-2xl shadow-secondary-900/10 ring-1 ring-white/80 lg:p-8"
+        className="relative overflow-hidden rounded-[2rem] bg-secondary-900 p-6 text-white shadow-2xl shadow-secondary-900/25 lg:p-8"
       >
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,183,77,0.22),transparent_34%),radial-gradient(circle_at_80%_10%,rgba(29,78,216,0.14),transparent_32%)]" />
-        <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-blue-200/50 bg-white/45 blur-sm" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(255,178,63,0.35),transparent_26rem),radial-gradient(circle_at_82%_18%,rgba(59,130,246,0.18),transparent_24rem)]" />
+        <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-primary-300/80 to-transparent" />
         <div className="relative z-10 grid gap-6 lg:grid-cols-[1fr_340px] lg:items-end">
           <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-white/85 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-primary-700 shadow-sm">
-              <Sparkles className="h-3.5 w-3.5" />
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-black/10 backdrop-blur">
+              <Sparkles className="h-3.5 w-3.5 text-primary-300" />
               Pipeline de suivi
             </div>
-            <h1 className="max-w-4xl text-3xl font-black tracking-tight sm:text-4xl lg:text-5xl">
+            <h1 className="max-w-4xl text-3xl font-black tracking-tight text-white sm:text-4xl lg:text-5xl">
               Rappels commerciaux, priorisés pour votre prochaine action.
             </h1>
-            <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-secondary-600 sm:text-base">
+            <p className="mt-4 max-w-2xl text-sm font-semibold leading-6 text-white/70 sm:text-base">
               Suivez les relances, RDV et annonces à traiter dans une timeline claire, avec les retards et actions du jour visibles immédiatement.
             </p>
           </div>
 
-          <div className="rounded-3xl border border-white bg-white/85 p-4 shadow-xl shadow-secondary-900/10 backdrop-blur">
-            <p className="text-xs font-black uppercase tracking-[0.16em] text-secondary-500">Prochaine action</p>
+          <div className="rounded-3xl border border-white/15 bg-white/10 p-4 shadow-2xl shadow-black/10 backdrop-blur">
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-primary-200">Prochaine action</p>
             {nextReminder ? (
               <>
-                <p className="mt-2 line-clamp-2 text-lg font-black text-secondary-950">{nextReminder.annonce_title}</p>
-                <p className="mt-2 text-sm font-semibold text-secondary-600">
+                <p className="mt-2 line-clamp-2 text-lg font-black text-white">{nextReminder.annonce_title}</p>
+                <p className="mt-2 text-sm font-semibold text-white/70">
                   {reminderTypeLabels[nextReminder.type]} · {new Intl.DateTimeFormat('fr-FR', {
                     day: 'numeric',
                     month: 'short',
@@ -194,7 +210,7 @@ const Reminders: React.FC = () => {
                 </p>
               </>
             ) : (
-              <p className="mt-2 text-sm font-semibold text-secondary-600">Aucune action ouverte pour le moment.</p>
+              <p className="mt-2 text-sm font-semibold text-white/70">Aucune action ouverte pour le moment.</p>
             )}
           </div>
         </div>
@@ -237,7 +253,7 @@ const Reminders: React.FC = () => {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <div className="rounded-full bg-secondary-50 px-3 py-2 text-xs font-semibold text-secondary-600">
-                {reminders.length} rappel{reminders.length > 1 ? 's' : ''}
+                {timelineReminders.length} rappel{timelineReminders.length > 1 ? 's' : ''}
                 {activeFiltersCount > 0 ? ` · ${activeFiltersCount} filtre${activeFiltersCount > 1 ? 's' : ''}` : ''}
               </div>
               <button
@@ -312,11 +328,11 @@ const Reminders: React.FC = () => {
 
           {loading ? (
             <LoadingSkeleton itemClassName="h-80 rounded-3xl" />
-          ) : reminders.length > 0 ? (
+          ) : timelineReminders.length > 0 ? (
             <div className="relative">
               <div className="absolute left-4 top-2 hidden h-full w-px bg-gradient-to-b from-primary-300 via-secondary-200 to-transparent lg:block" />
               <div className="space-y-4 lg:pl-10">
-                {reminders.map((reminder) => (
+                {timelineReminders.map((reminder) => (
                   <div key={reminder.id} data-reminders-card className="relative">
                     <span className="absolute -left-[2.08rem] top-8 hidden h-3 w-3 rounded-full border-2 border-white bg-primary-500 shadow-lg shadow-primary-500/30 lg:block" />
                     <ReminderCard

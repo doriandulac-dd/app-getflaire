@@ -33,6 +33,11 @@ const isAgencyStatusScope = (activityScope: ActivityScope) =>
 const isMissingColumnError = (error: { code?: string; message?: string }) =>
   error.code === '42703' || (error.message || '').includes('agency_id does not exist');
 
+const statusSelect = (useAgencyColumn: boolean) =>
+  useAgencyColumn
+    ? 'id, annonce_id, user_id, agency_id, statut, note, date_suivi'
+    : 'id, annonce_id, user_id, statut, note, date_suivi';
+
 const applyStatusScope = (
   query: any,
   { annonceId, userId, activityScope }: StatusScopeParams,
@@ -56,7 +61,7 @@ const fetchStatusRow = async (params: StatusScopeParams, useAgencyColumn: boolea
   const query = applyStatusScope(
     supabase
       .from('suivi_annonce')
-      .select('*'),
+      .select(statusSelect(useAgencyColumn)),
     params,
     useAgencyColumn
   )
@@ -87,7 +92,7 @@ const fetchMutablePropertyStatus = async (params: StatusScopeParams) => {
 
   const { data, error } = await supabase
     .from('suivi_annonce')
-    .select('*')
+    .select(statusSelect(false))
     .eq('annonce_id', params.annonceId)
     .eq('user_id', params.userId)
     .order('date_suivi', { ascending: false })
@@ -109,10 +114,16 @@ const updatePropertyStatusRow = async (
     .from('suivi_annonce')
     .update(payload)
     .eq('id', id)
-    .select('*')
+    .select(statusSelect(supportsAgencyStatusColumns !== false))
     .maybeSingle();
 
   if (error) {
+    if (supportsAgencyStatusColumns !== false && isMissingColumnError(error)) {
+      supportsAgencyStatusColumns = false;
+      const { agency_id: _agencyId, ...compatiblePayload } = payload;
+      return updatePropertyStatusRow(id, compatiblePayload);
+    }
+
     console.error('[status-update] update failed', JSON.stringify(error), error);
     throw error;
   }
@@ -157,10 +168,27 @@ export const savePropertyStatus = async ({
   const { data, error } = await supabase
     .from('suivi_annonce')
     .insert(payload)
-    .select('*')
+    .select(statusSelect(supportsAgencyStatusColumns !== false))
     .maybeSingle();
 
   if (error) {
+    if (supportsAgencyStatusColumns !== false && isMissingColumnError(error)) {
+      supportsAgencyStatusColumns = false;
+      const { agency_id: _agencyId, ...compatiblePayload } = payload;
+      const { data: compatibleData, error: compatibleError } = await supabase
+        .from('suivi_annonce')
+        .insert(compatiblePayload)
+        .select(statusSelect(false))
+        .maybeSingle();
+
+      if (!compatibleError && compatibleData) return compatibleData as PropertyStatusRow;
+      if (compatibleError?.code === '23505') {
+        const racedStatus = await fetchPropertyStatus({ annonceId, userId, activityScope });
+        if (racedStatus) return updatePropertyStatusRow(racedStatus.id, compatiblePayload);
+      }
+      if (compatibleError) throw compatibleError;
+    }
+
     if (error.code === '23505') {
       const racedStatus = await fetchPropertyStatus({ annonceId, userId, activityScope });
       if (racedStatus) return updatePropertyStatusRow(racedStatus.id, payload);
