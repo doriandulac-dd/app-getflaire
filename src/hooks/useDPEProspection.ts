@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { getDepartmentLabels } from './useProperties';
 import { normalizeDepartmentCodes, normalizeDepartmentCode } from '../utils/pigeScope';
 
 export type DPERecord = {
@@ -101,6 +102,7 @@ const getDepartmentStorageVariants = (department: string) => {
     numeric.padStart(2, '0'),
     numeric.padStart(3, '0'),
     withoutLeadingZeros,
+    ...getDepartmentLabels(department),
   ].filter(Boolean)));
 };
 
