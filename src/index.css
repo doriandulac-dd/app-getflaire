@@ -111,6 +111,58 @@ input, select, textarea {
   @apply bg-white/95 border border-gray-200/80 shadow-sm;
 }
 
+.prospection-cockpit-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-areas:
+    "map"
+    "filters"
+    "detail";
+  grid-template-columns: minmax(0, 1fr);
+  padding: 1rem;
+}
+
+.prospection-map-panel {
+  grid-area: map;
+  min-width: 0;
+}
+
+.prospection-filters-panel {
+  grid-area: filters;
+}
+
+.prospection-detail-panel {
+  grid-area: detail;
+}
+
+@media (min-width: 1024px) {
+  .prospection-cockpit-grid {
+    grid-template-areas:
+      "map detail"
+      "filters detail";
+    grid-template-columns: minmax(0, 1fr) 20rem;
+  }
+
+  .prospection-filters-panel,
+  .prospection-detail-panel {
+    max-height: 34rem;
+    overflow: auto;
+  }
+}
+
+@media (min-width: 1280px) {
+  .prospection-cockpit-grid {
+    grid-template-areas: "filters map detail";
+    grid-template-columns: 17.5rem minmax(0, 1fr) 22rem;
+    padding: 0.75rem;
+  }
+
+  .prospection-filters-panel,
+  .prospection-detail-panel {
+    max-height: calc(100vh - 8rem);
+  }
+}
+
 .motion-safe-card {
   @apply transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg;
 }
