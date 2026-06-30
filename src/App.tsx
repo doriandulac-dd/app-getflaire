@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Pige from './pages/Pige';
 import PropertyDetails from './pages/PropertyDetails';
 import SmartAlerts from './pages/SmartAlerts';
+import ProspectionPage from './pages/ProspectionPage';
 
 // Placeholder components/pages
 import Surveillance from './pages/Surveillance';
@@ -132,6 +133,8 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="pige" element={<Pige />} />
             <Route path="pige/:id" element={<PropertyDetails />} />
+            <Route path="prospection" element={<ProspectionPage />} />
+            <Route path="prospection/dpe" element={<Navigate to="/prospection" replace />} />
             <Route path="alertes-intelligentes" element={<SmartAlerts />} />
             <Route path="surveillance" element={<Surveillance />} />
             <Route path="reminders" element={<Reminders />} />

@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { 
   Home, 
   Search, 
+  Building2,
   Radar,
   Eye, 
   Calendar, 
@@ -30,6 +31,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
   const navItems = [
     { to: '/', icon: Home, label: 'Dashboard' },
     { to: '/pige', icon: Search, label: 'Pige immobilière' },
+    { to: '/prospection', icon: Building2, label: 'Prospection' },
     { to: '/alertes-intelligentes', icon: Radar, label: 'Alertes intelligentes' },
     { to: '/surveillance', icon: Eye, label: 'Surveillance' },
     { to: '/reminders', icon: Calendar, label: 'Rappels' },

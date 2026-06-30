@@ -52,6 +52,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick }) => {
   const routeMeta = [
     { path: '/', title: 'Dashboard', subtitle: 'Vue opérationnelle' },
     { path: '/pige', title: 'Pige immobilière', subtitle: 'Recherche et qualification' },
+    { path: '/prospection', title: 'Prospection', subtitle: 'Carte DPE et cadastre' },
     { path: '/alertes-intelligentes', title: 'Alertes intelligentes', subtitle: 'Matching client et scoring' },
     { path: '/surveillance', title: 'Surveillance', subtitle: 'Biens suivis et alertes' },
     { path: '/reminders', title: 'Rappels', subtitle: 'Relances et priorités' },

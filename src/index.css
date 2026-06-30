@@ -111,6 +111,150 @@ input, select, textarea {
   @apply bg-white/95 border border-gray-200/80 shadow-sm;
 }
 
+.prospection-map-stage {
+  position: relative;
+  min-height: calc(100vh - 5rem);
+}
+
+.prospection-map-panel {
+  min-width: 0;
+}
+
+.prospection-side-shell {
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 24px;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.06);
+  padding: 1rem;
+}
+
+.prospection-map-shell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0;
+  border: 0;
+  background: #e5e7eb;
+  box-shadow: none;
+}
+
+.prospection-map-toolbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  z-index: 500;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  pointer-events: none;
+}
+
+.prospection-map-toolbar > * {
+  pointer-events: auto;
+}
+
+.prospection-floating-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 44px;
+  border-radius: 18px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  background: rgba(255, 255, 255, 0.96);
+  padding: 0 0.9rem;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.prospection-floating-control select {
+  appearance: none;
+}
+
+.prospection-popup-card {
+  min-width: 18rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.25rem;
+}
+
+.prospection-score-marker {
+  background: transparent;
+  border: 0;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 22px;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+}
+
+.leaflet-popup-content {
+  margin: 0.85rem;
+}
+
+.leaflet-popup-tip {
+  box-shadow: none;
+}
+
+@media (max-width: 1023px) {
+  .prospection-map-toolbar {
+    position: static;
+    padding: 1rem 1rem 0;
+  }
+}
+
+.prospection-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(4px);
+}
+
+.prospection-filters-drawer,
+.prospection-detail-drawer {
+  position: fixed;
+  top: 1rem;
+  bottom: 1rem;
+  z-index: 540;
+  width: min(24rem, calc(100% - 1.5rem));
+  overflow: auto;
+}
+
+.prospection-filters-drawer {
+  left: 0.75rem;
+}
+
+.prospection-detail-drawer {
+  right: 0.75rem;
+}
+
+@media (min-width: 1024px) {
+  .prospection-map-stage {
+    min-height: calc(100vh - 4.5rem);
+  }
+
+  .prospection-map-shell {
+    min-height: calc(100vh - 4.5rem);
+  }
+}
+
+@media (max-width: 767px) {
+  .prospection-filters-drawer,
+  .prospection-detail-drawer {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: min(82vh, 44rem);
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+}
+
 .motion-safe-card {
   @apply transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg;
 }
