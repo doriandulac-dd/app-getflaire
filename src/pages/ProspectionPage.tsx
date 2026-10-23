@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { Feature } from 'geojson';
+import type { Feature, Geometry } from 'geojson';
 import { Circle, CircleMarker, GeoJSON, MapContainer, Marker, Popup, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import {
   ArrowUpRight,
@@ -229,8 +229,8 @@ const getScoreBand = (score: number) => {
   return '0 - 25';
 };
 
-const extractGeometryBounds = (geometry?: Record<string, unknown>) => {
-  const coordinates = geometry?.coordinates;
+const extractGeometryBounds = (geometry?: Geometry | Record<string, unknown> | null) => {
+  const coordinates = geometry && 'coordinates' in geometry ? geometry.coordinates : undefined;
   const values: Array<[number, number]> = [];
 
   const visit = (node: unknown) => {
@@ -434,10 +434,10 @@ const MapZoomControls: React.FC = () => {
   );
 };
 
-const toLeafletFeature = (feature: CadastreFeature): Feature => ({
+const toLeafletFeature = (feature: CadastreFeature): Feature<Geometry | null> => ({
   type: 'Feature' as const,
   properties: feature,
-  geometry: feature.geometry as Feature['geometry'],
+  geometry: feature.geometry ?? null,
 });
 
 const getCadastreStyle = (layer: CadastreLayerKey) => {

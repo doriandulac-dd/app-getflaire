@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
+import type { Geometry } from 'geojson';
 import { supabase } from '../lib/supabase';
 
 export type CadastreBbox = {
@@ -22,7 +23,7 @@ export type CadastreFeature = {
   building_type?: string | null;
   name?: string | null;
   bbox?: Record<string, unknown>;
-  geometry?: Record<string, unknown>;
+  geometry?: Geometry | null;
 };
 
 export type CadastreParcelDetails = {
